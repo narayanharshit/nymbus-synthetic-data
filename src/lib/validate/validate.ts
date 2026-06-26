@@ -147,9 +147,24 @@ export function validateDataset(ds: Dataset): ValidationResult {
         : `${dateBreaks.length} date issue(s): ${dateBreaks.slice(0, 5).join(", ")}${dateBreaks.length > 5 ? "…" : ""}`,
   });
 
-  // 4) Requested edge cases present ------------------------------------------
+  // 4) Requested edge cases present (feasibility-aware) -----------------------
+  // A requested edge case that is *structurally impossible* for the chosen
+  // products/parties/window (e.g. joint ownership on a loan-only config) is a
+  // WARN with the reason — not a hard FAIL. Feasible-but-missing is still a FAIL
+  // (a real generator bug).
   const ec = ds.meta.spec.edgeCases;
-  const has = {
+  const isTxnDeposit = (p: string) => p === "checking" || p === "savings" || p === "money_market";
+  const isAnyDeposit = (p: string) => isTxnDeposit(p) || p === "cd";
+  const individuals = ds.parties.filter((p) => p.type === "individual").length;
+  const txnDepositAccts = ds.accounts.filter((a) => isTxnDeposit(a.product)).length;
+  const depositAccts = ds.accounts.filter((a) => isAnyDeposit(a.product)).length;
+  const txnCount = ds.transactions.length;
+  const volume = ds.meta.spec.avgTransactionsPerAccountPerMonth;
+  const windowDays = Math.round(
+    (new Date(wEnd).getTime() - new Date(wStart).getTime()) / 86_400_000,
+  );
+
+  const has: Record<keyof EdgeCases, boolean> = {
     nsfOverdraft: ds.transactions.some((t) => t.tags.includes("overdraft") || t.tags.includes("nsf")),
     dormantAccounts: ds.accounts.some((a) => a.status === "dormant"),
     atLimitAccounts: ds.accounts.some((a) => a.tags.includes("at_limit")),
@@ -164,19 +179,82 @@ export function validateDataset(ds: Dataset): ValidationResult {
     jointOwnership: ds.accounts.some((a) => a.owners.length > 1),
   };
 
+  // new_funding / dormant / closed are mutually-exclusive account states: hosting
+  // them all needs at least one deposit account per requested state.
+  const exclusiveRequested =
+    (ec.newAccountFunding ? 1 : 0) + (ec.dormantAccounts ? 1 : 0) + (ec.closedWithResidual ? 1 : 0);
+  const enoughForExclusive = depositAccts >= exclusiveRequested;
+
+  const feasible: Record<keyof EdgeCases, boolean> = {
+    nsfOverdraft: txnDepositAccts > 0 && volume > 0,
+    dormantAccounts: depositAccts > 0 && enoughForExclusive,
+    atLimitAccounts: ds.accounts.some((a) => a.status !== "closed" && !a.tags.includes("new_funding")),
+    backdatedPostings: txnCount > 0,
+    largeWires: txnDepositAccts > 0,
+    newAccountFunding: txnDepositAccts > 0 && enoughForExclusive,
+    closedWithResidual: depositAccts > 0 && windowDays >= 14 && enoughForExclusive,
+    jointOwnership: individuals >= 2 && depositAccts > 0,
+  };
+
+  const reasonFor = (k: keyof EdgeCases): string => {
+    switch (k) {
+      case "nsfOverdraft":
+        return txnDepositAccts === 0 ? "no checking/savings/money-market account" : "no transaction volume to overdraw";
+      case "largeWires":
+        return "no checking/savings/money-market account to wire from";
+      case "newAccountFunding":
+        return txnDepositAccts === 0 ? "no checking/savings/money-market account" : "too few deposit accounts to host every requested account state";
+      case "dormantAccounts":
+        return depositAccts === 0 ? "no deposit accounts" : "too few deposit accounts to host every requested account state";
+      case "closedWithResidual":
+        return depositAccts === 0
+          ? "no deposit accounts"
+          : windowDays < 14
+            ? "the window is shorter than ~2 weeks"
+            : "too few deposit accounts to host every requested account state";
+      case "jointOwnership":
+        return individuals < 2 ? "fewer than two individual customers" : "no deposit accounts";
+      case "atLimitAccounts":
+        return "no eligible accounts (all are brand-new or closed)";
+      case "backdatedPostings":
+        return "no transactions";
+    }
+  };
+
   const requested = (Object.keys(ec) as (keyof EdgeCases)[]).filter((k) => ec[k]);
-  const missing = requested.filter((k) => !has[k]);
+  const present = requested.filter((k) => has[k]);
+  const missingFeasible = requested.filter((k) => !has[k] && feasible[k]);
+  const missingInfeasible = requested.filter((k) => !has[k] && !feasible[k]);
+
+  const edgeStatus: CheckStatus =
+    missingFeasible.length > 0 ? "fail" : missingInfeasible.length > 0 ? "warn" : "pass";
+
+  let edgeDetail: string;
+  if (requested.length === 0) {
+    edgeDetail = "No special edge cases were requested.";
+  } else {
+    const segments: string[] = [
+      `${present.length}/${requested.length} requested edge case(s) verified present` +
+        (present.length ? `: ${present.map((k) => EDGE_LABELS[k]).join(", ")}.` : "."),
+    ];
+    if (missingFeasible.length) {
+      segments.push(`Missing (unexpected): ${missingFeasible.map((k) => EDGE_LABELS[k]).join(", ")}.`);
+    }
+    if (missingInfeasible.length) {
+      segments.push(
+        "Not applicable to this configuration: " +
+          missingInfeasible.map((k) => `${EDGE_LABELS[k]} (${reasonFor(k)})`).join("; ") + ".",
+      );
+    }
+    edgeDetail = segments.join(" ");
+  }
+
   checks.push({
     id: "edge_cases",
     label: "Requested edge cases present",
-    status: requested.length === 0 ? "pass" : missing.length === 0 ? "pass" : "fail",
-    count: missing.length,
-    detail:
-      requested.length === 0
-        ? "No special edge cases were requested."
-        : missing.length === 0
-          ? `All ${requested.length} requested edge case(s) verified present: ${requested.map((k) => EDGE_LABELS[k]).join(", ")}.`
-          : `Missing: ${missing.map((k) => EDGE_LABELS[k]).join(", ")}.`,
+    status: edgeStatus,
+    count: missingFeasible.length + missingInfeasible.length,
+    detail: edgeDetail,
   });
 
   // 5) Soft sanity checks (warnings, not failures) ---------------------------

@@ -36,9 +36,7 @@ import {
   toISO,
 } from "./dates";
 
-const NSF_FEE_MINOR = 3500; // $35
-const OD_FEE_MINOR = 3500;
-const SERVICE_FEE_MINOR = 1200; // $12 monthly maintenance (sometimes)
+const OD_FEE_MINOR = 3500; // $35 overdraft / NSF fee
 
 interface Ctx {
   rng: Rng;
@@ -47,7 +45,6 @@ interface Ctx {
   guarantee: {
     nsf: Set<string>;
     largeWire: Set<string>;
-    backdated: Set<string>;
   };
 }
 
@@ -329,8 +326,6 @@ function generateForDeposit(ctx: Ctx, account: Account, partyId: string, out: Tr
   events.sort((a, b) => (a.eff < b.eff ? -1 : a.eff > b.eff ? 1 : 0));
 
   const forceNsf = ctx.guarantee.nsf.has(account.id);
-  const backdateBudget = ctx.guarantee.backdated.has(account.id) ? rng.int(1, 2) : 0;
-  let backdatesUsed = 0;
   let nsfDone = false;
   const floor = 500; // keep ~$5 cushion for non-overdraft accounts
 
@@ -355,11 +350,8 @@ function generateForDeposit(ctx: Ctx, account: Account, partyId: string, out: Tr
       signed = -Math.min(Math.abs(signed), allowed);
     }
 
-    const backdate = backdatesUsed < backdateBudget && rng.bool(0.5);
-    if (backdate) backdatesUsed++;
-
     balance += signed;
-    const txn = newTxn(ctx, account, partyId, ev.type, signed, balance, ev.eff, tags, backdate);
+    const txn = newTxn(ctx, account, partyId, ev.type, signed, balance, ev.eff, tags);
     out.push(txn);
 
     // Overdraft fee follows the overdraft.
@@ -470,8 +462,30 @@ function pickGuaranteeTargets(rng: Rng, spec: GenerationSpec, accounts: Account[
   return {
     nsf: want(spec.edgeCases.nsfOverdraft, 4, checking.length ? checking : activeDeposits),
     largeWire: want(spec.edgeCases.largeWires, 4, activeDeposits),
-    backdated: want(spec.edgeCases.backdatedPostings, 5, accounts.filter((a) => a.status !== "closed")),
   };
+}
+
+/**
+ * Guarantee a few backdated postings exist when requested — a global post-pass
+ * so presence never depends on which accounts happened to get activity. Shifts a
+ * transaction's posting date several days past its effective date (posting may
+ * land after the window end, which is correct for a late/corrected posting).
+ */
+function ensureBackdated(ctx: Ctx, out: Transaction[]): void {
+  const MIN = 3;
+  let have = out.reduce((n, t) => n + (t.tags.includes("backdated") ? 1 : 0), 0);
+  for (const t of out) {
+    if (have >= MIN) break;
+    if (t.status !== "posted") continue;
+    if (t.tags.includes("backdated") || t.tags.includes("residual_after_close")) continue;
+    const eff = fromISO(t.effectiveDate);
+    t.postingDate = toISO(addDays(eff, ctx.rng.int(3, 9)));
+    t.tags.push("backdated");
+    if ((isWeekend(eff) || isHoliday(eff)) && !t.tags.includes("holiday_posting")) {
+      t.tags.push("holiday_posting");
+    }
+    have++;
+  }
 }
 
 export function generateTransactions(
@@ -503,6 +517,8 @@ export function generateTransactions(
       generateForDeposit(ctx, account, primary, out);
     }
   }
+
+  if (spec.edgeCases.backdatedPostings) ensureBackdated(ctx, out);
 
   return out;
 }

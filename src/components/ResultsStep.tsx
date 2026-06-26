@@ -100,14 +100,17 @@ export function ResultsStep({
 }
 
 function ValidationPanel({ validation }: { validation: ValidationResult }) {
+  const warnCount = validation.checks.filter((c) => c.status === "warn").length;
   return (
     <Card className="p-5 lg:col-span-2">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-900">Validation &amp; reconciliation</h3>
-        {validation.ok ? (
-          <Badge tone="green">✓ All checks passed</Badge>
-        ) : (
+        {!validation.ok ? (
           <Badge tone="red">✕ Issues found</Badge>
+        ) : warnCount > 0 ? (
+          <Badge tone="amber">✓ Passed · {warnCount} note{warnCount === 1 ? "" : "s"}</Badge>
+        ) : (
+          <Badge tone="green">✓ All checks passed</Badge>
         )}
       </div>
       <p className="mt-1 text-xs text-slate-500">

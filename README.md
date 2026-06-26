@@ -133,7 +133,10 @@ Every dataset must pass, before you ever see it:
    reference resolves; every account has a primary owner.
 3. **Date coherence** — posting ≥ effective; all activity is within the account's lifecycle and the
    requested window.
-4. **Edge-case presence** — every edge case you asked for is actually in the data.
+4. **Edge-case presence** — every edge case you asked for is actually in the data. An edge case
+   that's *structurally impossible* for the chosen configuration (e.g. joint ownership with no
+   deposit accounts, or overdrafts with zero transaction volume) is flagged as a **note with the
+   reason** — not a failure.
 
 ---
 
@@ -156,8 +159,9 @@ scripts/smoke.ts              # 3-input end-to-end smoke test
 ```
 
 Generation runs **in the browser** (deterministic, seeded → instant, free, no serverless compute).
-The only server call is the small NL→spec interpretation. Same seed + same spec ⇒ byte-identical
-dataset, which is why "regenerate" is stable and bugs are reproducible.
+The only server call is the small NL→spec interpretation. Same seed + same spec ⇒ the same dataset
+(only the `generatedAt` timestamp varies), which is why "regenerate" is stable and bugs are
+reproducible.
 
 ---
 

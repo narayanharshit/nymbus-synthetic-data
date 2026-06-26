@@ -19,13 +19,12 @@ import {
   type Party,
   type ProductType,
   DEPOSIT_PRODUCTS,
-  LOAN_PRODUCTS,
 } from "../domain/types";
 import type { GenerationSpec } from "../domain/spec";
 import { Rng } from "./rng";
 import { BRANCHES } from "./pools";
 import { accountNumber, formatId } from "./identity";
-import { addDays, fromISO, isoMonthsLater, randomDateISO, toISO } from "./dates";
+import { addDays, daysBetween, fromISO, isoMonthsLater, randomDateISO, toISO } from "./dates";
 
 const PRODUCT_NAMES: Record<ProductType, string[]> = {
   checking: ["Everyday Checking", "Hometown Checking", "Premier Checking", "Free Checking"],
@@ -52,9 +51,6 @@ const PRODUCT_WEIGHTS: Record<ProductType, number> = {
 
 function isDeposit(p: ProductType): boolean {
   return (DEPOSIT_PRODUCTS as ProductType[]).includes(p);
-}
-function isLoan(p: ProductType): boolean {
-  return (LOAN_PRODUCTS as ProductType[]).includes(p);
 }
 
 interface ProductAttrs {
@@ -298,48 +294,96 @@ function applyJointOwnership(
   }
 }
 
-/** Designate dormant / closed-with-residual / at-limit accounts per the spec flags. */
+/** Transaction-style deposits (can host wires/overdrafts/funding). CDs excluded. */
+function isTxnDeposit(p: ProductType): boolean {
+  return p === "checking" || p === "savings" || p === "money_market";
+}
+
+/**
+ * Designate edge-case accounts per the spec flags. Order matters: new-account
+ * funding is forced first so later designations can exclude those accounts, and
+ * every designation keeps dates coherent (close dates never precede open dates).
+ */
 function applyAccountEdgeCases(rng: Rng, spec: GenerationSpec, accounts: Account[]): void {
   const ec = spec.edgeCases;
   const windowStart = spec.dateRange.start;
   const windowEnd = spec.dateRange.end;
-
-  const target = (eligible: Account[], rate = 0.08, min = 3) =>
-    sampleIndices(rng, eligible.length, Math.min(eligible.length, Math.max(min, Math.round(eligible.length * rate)))).map(
-      (i) => eligible[i],
-    );
+  const windowDays = daysBetween(windowStart, windowEnd);
 
   const setStatus = (a: Account, s: AccountStatus, tag: string) => {
     a.status = s;
     if (!a.tags.includes(tag)) a.tags.push(tag);
   };
 
+  // Desired count for a designation (~8%, min 3) and a sampler.
+  const desired = (len: number) => Math.max(3, Math.round(len * 0.08));
+  const pickN = (eligible: Account[], n: number) =>
+    sampleIndices(rng, eligible.length, Math.min(Math.max(0, n), eligible.length)).map((i) => eligible[i]);
+
+  // new_funding / dormant / closed are mutually-exclusive account states. When
+  // accounts are scarce, reserve one per *other* requested state so each gets a
+  // chance to appear rather than the first designation consuming them all.
+  const closedFeasible = ec.closedWithResidual && windowDays >= 14;
+
+  // 1) New-account funding: guarantee some accounts open *inside* the window,
+  //    starting at 0 and funded by their first transaction. Convert existing
+  //    (pre-window) transaction-deposit accounts so their memberSince still
+  //    precedes the new open date.
+  if (ec.newAccountFunding) {
+    const reserve = (ec.dormantAccounts ? 1 : 0) + (closedFeasible ? 1 : 0);
+    const latestOpen = toISO(addDays(fromISO(windowEnd), -3));
+    const eligible = accounts.filter(
+      (a) => a.status === "active" && isTxnDeposit(a.product) && !a.tags.includes("new_funding"),
+    );
+    const want = Math.min(desired(eligible.length), Math.max(1, eligible.length - reserve));
+    for (const a of pickN(eligible, want)) {
+      a.openDate = randomDateISO(rng, windowStart, latestOpen > windowStart ? latestOpen : windowStart);
+      a.openingBalanceMinor = 0;
+      a.currentBalanceMinor = 0;
+      a.availableBalanceMinor = 0;
+      a.tags.push("new_funding");
+    }
+  }
+
+  // 2) Dormant deposit accounts (not brand-new).
   if (ec.dormantAccounts) {
+    const reserve = closedFeasible ? 1 : 0;
     const eligible = accounts.filter(
       (a) => a.status === "active" && isDeposit(a.product) && !a.tags.includes("new_funding"),
     );
-    for (const a of target(eligible)) setStatus(a, "dormant", "dormant");
+    const want = Math.min(desired(eligible.length), Math.max(1, eligible.length - reserve));
+    for (const a of pickN(eligible, want)) setStatus(a, "dormant", "dormant");
   }
 
-  if (ec.closedWithResidual) {
+  // 3) Closed-with-residual. Only feasible if the window is long enough to host
+  //    a mid-window close; eligible accounts are pre-window so closeDate > openDate.
+  if (closedFeasible) {
+    const lo = toISO(addDays(fromISO(windowStart), 7));
+    const hi = toISO(addDays(fromISO(windowEnd), -3));
     const eligible = accounts.filter(
-      (a) => a.status === "active" && isDeposit(a.product) && !a.tags.includes("dormant"),
+      (a) =>
+        a.status === "active" &&
+        isDeposit(a.product) &&
+        !a.tags.includes("dormant") &&
+        !a.tags.includes("new_funding"),
     );
-    for (const a of target(eligible)) {
-      // Close partway through the window so residual activity can follow.
-      const closeDate = randomDateISO(
-        rng,
-        toISO(addDays(fromISO(windowStart), 10)),
-        toISO(addDays(fromISO(windowEnd), -10)),
-      );
-      a.closeDate = closeDate;
+    for (const a of pickN(eligible, desired(eligible.length))) {
+      a.closeDate = randomDateISO(rng, lo, hi);
       setStatus(a, "closed", "closed_residual");
     }
   }
 
+  // 4) At product limit (loans/credit lines maxed, deposits at minimum). This is
+  //    a tag, not an exclusive status, so it may reuse a dormant account; it only
+  //    avoids brand-new (funding) and closed accounts.
   if (ec.atLimitAccounts) {
-    const eligible = accounts.filter((a) => a.status === "active" && !a.tags.includes("closed_residual"));
-    for (const a of target(eligible)) {
+    const eligible = accounts.filter(
+      (a) =>
+        a.status !== "closed" &&
+        !a.tags.includes("new_funding") &&
+        !a.tags.includes("at_limit"),
+    );
+    for (const a of pickN(eligible, desired(eligible.length))) {
       a.tags.push("at_limit");
       if (a.product === "credit_line" && a.creditLimitMinor) {
         a.openingBalanceMinor = -Math.round(a.creditLimitMinor * rng.float(0.95, 1.0));
@@ -352,5 +396,4 @@ function applyAccountEdgeCases(rng: Rng, spec: GenerationSpec, accounts: Account
       }
     }
   }
-  void windowEnd;
 }

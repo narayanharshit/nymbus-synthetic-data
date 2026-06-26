@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { PRESETS } from "@/lib/domain/presets";
-import { DEFAULT_SPEC, type GenerationSpec } from "@/lib/domain/spec";
+import type { GenerationSpec } from "@/lib/domain/spec";
 import type { DeepPartial, InterpretSource } from "@/lib/interpret/merge";
 import { generateDataset } from "@/lib/generate/generator";
 import { validateDataset, type ValidationResult } from "@/lib/validate/validate";

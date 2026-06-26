@@ -19,8 +19,12 @@
 - **Validate:** reconciliation, foreign-key integrity, date coherence, and requested-edge-case
   presence — shown in the UI and asserted by the smoke test.
 - **Export:** per-table **CSV** (dollars, Excel-ready) and one exact **JSON** (integer cents).
-- **Proof:** `npm run smoke` runs 3 realistic inputs end-to-end; `npm run build` and
-  `npm run typecheck` are green.
+- **Proof:** `npm run smoke` runs 3 realistic inputs end-to-end; `npm run build`, `npm run lint`,
+  and `npm run typecheck` are green. Separately stress-tested against 50+ adversarial
+  product/edge/scale combinations plus fuzzing — reconciliation, FK integrity, date coherence,
+  determinism, and CSV-export round-trip all hold. Structurally-impossible edge requests (e.g.
+  joint ownership with no deposit accounts) warn *with the reason* rather than failing, and the
+  client bundle was verified to contain no Anthropic SDK or API key.
 
 ## The LLM-vs-deterministic rationale (the core competency on display)
 
