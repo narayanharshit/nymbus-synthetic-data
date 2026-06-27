@@ -81,7 +81,9 @@ is never exposed to the client.
 
 The **Confirm** screen always shows how your words were read (and what was assumed) before any bulk
 data is produced — directly addressing the brief's pain point that *the wrong data produces
-misleading test results*.
+misleading test results*. The interpreter reports a **confidence level**: if it can't confidently
+parse your description (e.g. gibberish, or phrasing the keyword rules miss), it says so with a
+prominent banner and fills safe defaults rather than projecting false certainty.
 
 ---
 

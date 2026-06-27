@@ -8,7 +8,7 @@ import {
 } from "@/lib/domain/spec";
 import { PRODUCT_TYPES, type ProductType } from "@/lib/domain/types";
 import type { EdgeCases } from "@/lib/domain/spec";
-import type { InterpretSource } from "@/lib/interpret/merge";
+import type { Confidence, InterpretSource } from "@/lib/interpret/merge";
 import { Badge, Button, Card, Field, NumberInput, Select, Spinner, TextInput, Toggle, cn } from "./ui";
 
 const PRODUCT_LABELS: Record<ProductType, string> = {
@@ -25,7 +25,6 @@ const PRODUCT_LABELS: Record<ProductType, string> = {
 const EDGE_CASES: { key: keyof EdgeCases; label: string; description: string }[] = [
   { key: "nsfOverdraft", label: "NSF / overdrafts", description: "Debits that push checking negative, plus a fee." },
   { key: "newAccountFunding", label: "New-account funding", description: "Accounts opened in-window, funded by a first deposit." },
-  { key: "jointOwnership", label: "Joint ownership", description: "Deposit accounts with two owners." },
   { key: "largeWires", label: "Large wires", description: "Wires above the review threshold." },
   { key: "dormantAccounts", label: "Dormant accounts", description: "Little to no recent activity." },
   { key: "atLimitAccounts", label: "At product limit", description: "Maxed credit lines, balances at minimums." },
@@ -46,6 +45,7 @@ export function ConfirmStep({
   spec,
   notes,
   source,
+  confidence,
   model,
   generating,
   onChange,
@@ -55,6 +55,7 @@ export function ConfirmStep({
   spec: GenerationSpec;
   notes: string[];
   source: InterpretSource;
+  confidence: Confidence;
   model?: string;
   generating: boolean;
   onChange: (s: GenerationSpec) => void;
@@ -82,7 +83,9 @@ export function ConfirmStep({
   const nearCap = estTxns > LIMITS.maxTransactions * 0.9;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
+    <div className="flex flex-col gap-6">
+      {confidence !== "high" && <ConfidenceBanner confidence={confidence} />}
+      <div className="grid gap-6 lg:grid-cols-3">
       {/* Left: interpretation notes + estimate (the "transparency" panel) */}
       <div className="flex flex-col gap-4 lg:col-span-1">
         <Card className="p-5">
@@ -252,6 +255,13 @@ export function ConfirmStep({
                 }
               />
             </Field>
+            <Field label="Seed" hint="Same seed + spec ⇒ the identical dataset, every time.">
+              <NumberInput
+                min={1}
+                value={spec.seed}
+                onChange={(e) => set("seed", Math.max(1, Math.round(Number(e.target.value) || 1)))}
+              />
+            </Field>
           </div>
           <div className="mt-4">
             <span className="text-sm font-medium text-slate-700">Transaction mix</span>
@@ -297,6 +307,33 @@ export function ConfirmStep({
             {generating ? <Spinner className="h-4 w-4" /> : <>Generate &rarr;</>}
           </Button>
         </div>
+      </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfidenceBanner({ confidence }: { confidence: Confidence }) {
+  const low = confidence === "low";
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-3 rounded-xl border p-4",
+        low ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50",
+      )}
+    >
+      <span className="text-lg" aria-hidden>
+        {low ? "⚠️" : "🟡"}
+      </span>
+      <div>
+        <p className={cn("text-sm font-semibold", low ? "text-red-800" : "text-amber-800")}>
+          {low ? "Low confidence — please review carefully" : "Partial understanding — double-check below"}
+        </p>
+        <p className={cn("text-sm", low ? "text-red-700" : "text-amber-700")}>
+          {low
+            ? "I couldn't confidently understand that description, so the fields below are mostly defaults. Review every field before generating, or go back and rephrase."
+            : "I caught some of your description but had to assume the rest. Please confirm the fields below reflect what you meant."}
+        </p>
       </div>
     </div>
   );

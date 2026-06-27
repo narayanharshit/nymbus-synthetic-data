@@ -3,7 +3,7 @@
 import * as React from "react";
 import { PRESETS } from "@/lib/domain/presets";
 import type { GenerationSpec } from "@/lib/domain/spec";
-import type { DeepPartial, InterpretSource } from "@/lib/interpret/merge";
+import type { Confidence, DeepPartial, InterpretSource } from "@/lib/interpret/merge";
 import { generateDataset } from "@/lib/generate/generator";
 import { validateDataset, type ValidationResult } from "@/lib/validate/validate";
 import { summarizeDataset, type DatasetSummary } from "@/lib/summary";
@@ -18,6 +18,7 @@ interface InterpretResponse {
   spec: GenerationSpec;
   notes: string[];
   source: InterpretSource;
+  confidence: Confidence;
   llmAvailable: boolean;
   fallback?: boolean;
   model?: string;
@@ -33,6 +34,7 @@ export function Studio() {
   const [spec, setSpec] = React.useState<GenerationSpec | null>(null);
   const [notes, setNotes] = React.useState<string[]>([]);
   const [source, setSource] = React.useState<InterpretSource>("heuristic");
+  const [confidence, setConfidence] = React.useState<Confidence>("high");
   const [model, setModel] = React.useState<string | undefined>();
   const [llmAvailable, setLlmAvailable] = React.useState<boolean | null>(null);
 
@@ -42,6 +44,10 @@ export function Studio() {
   const [summary, setSummary] = React.useState<DatasetSummary | null>(null);
 
   async function interpret() {
+    if (!text.trim() && Object.keys(baseSpec).length === 0) {
+      setInterpretError("Add a short description of the client, or pick a preset on the right, to start.");
+      return;
+    }
     setInterpreting(true);
     setInterpretError(null);
     try {
@@ -55,6 +61,7 @@ export function Studio() {
       setSpec(data.spec);
       setNotes(data.notes ?? []);
       setSource(data.fallback ? "heuristic" : data.source);
+      setConfidence(data.confidence ?? "high");
       setModel(data.model);
       setLlmAvailable(data.llmAvailable);
       setStep("confirm");
@@ -129,6 +136,7 @@ export function Studio() {
           spec={spec}
           notes={notes}
           source={source}
+          confidence={confidence}
           model={model}
           generating={generating}
           onChange={setSpec}

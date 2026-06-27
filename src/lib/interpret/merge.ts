@@ -11,6 +11,9 @@ import { normalizeSpec, type GenerationSpec } from "../domain/spec";
 
 export type InterpretSource = "llm" | "heuristic";
 
+/** How confident the interpreter is that it understood the input. */
+export type Confidence = "high" | "medium" | "low";
+
 export type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends Array<infer U>
     ? Array<U>
@@ -24,6 +27,8 @@ export interface InterpretResult {
   /** Plain-language notes: assumptions made, fields defaulted, adjustments. */
   notes: string[];
   source: InterpretSource;
+  /** Calibrated confidence that the input was understood. */
+  confidence: Confidence;
 }
 
 /** Deep-merge a partial patch over a partial base (objects merge, arrays/scalars replace). */
@@ -55,8 +60,9 @@ export function finalizeInterpretation(
   patch: DeepPartial<GenerationSpec>,
   extraNotes: string[],
   source: InterpretSource,
+  confidence: Confidence = "high",
 ): InterpretResult {
   const merged = deepMergeSpec(base, patch);
   const { spec, notes } = normalizeSpec(merged);
-  return { spec, notes: [...extraNotes, ...notes], source };
+  return { spec, notes: [...extraNotes, ...notes], source, confidence };
 }

@@ -315,11 +315,13 @@ function generateForDeposit(ctx: Ctx, account: Account, partyId: string, out: Tr
     }
   }
 
-  // 4) Guaranteed edge cases for this account.
+  // 4) Guaranteed large wire. Modeled as an INCOMING wire (a credit) so its full
+  //    amount survives — an outgoing wire could be shrunk by the overdraft floor
+  //    below, which would defeat the "above threshold" guarantee. A large
+  //    incoming wire is also a canonical AML review trigger.
   if (ctx.guarantee.largeWire.has(account.id)) {
     const amt = spec.largeWireThresholdMinor + rng.amountMinor(2000, 60000);
-    const dir = rng.bool(0.5) ? 1 : -1;
-    events.push({ eff: randomDateISO(rng, start, end), type: dir === 1 ? "wire_in" : "wire_out", signed: dir * amt, tags: ["large_wire"], backdate: false });
+    events.push({ eff: randomDateISO(rng, start, end), type: "wire_in", signed: amt, tags: ["large_wire"], backdate: false });
   }
 
   // Sort by effective date for a coherent running balance.
@@ -327,7 +329,9 @@ function generateForDeposit(ctx: Ctx, account: Account, partyId: string, out: Tr
 
   const forceNsf = ctx.guarantee.nsf.has(account.id);
   let nsfDone = false;
-  const floor = 500; // keep ~$5 cushion for non-overdraft accounts
+  // Each account has its own "comfortable minimum" so balances don't all clamp
+  // to the same value (e.g. an artificial $5.00 everywhere).
+  const floor = rng.amountMinor(50, 2500);
 
   for (const ev of events) {
     let signed = ev.signed;
@@ -343,9 +347,12 @@ function generateForDeposit(ctx: Ctx, account: Account, partyId: string, out: Tr
     if (forceNsf && !nsfDone && signed < 0 && balance > 0) {
       signed = -(balance + rng.amountMinor(25, 400)); // overshoot available
       tags.push("nsf", "overdraft");
-    } else if (signed < 0 && balance + signed < floor && !account.tags.includes("nsf_prone")) {
-      // Non-overdraft account: shrink the debit to keep a small positive balance.
-      const allowed = Math.max(0, balance - floor);
+    } else if (signed < 0 && balance + signed < floor && !tags.includes("large_wire")) {
+      // Non-overdraft account: shrink the debit but leave a *varied* cushion so
+      // balances don't all settle to the same number. Never shrink a flagged
+      // large wire — its amount must stay above threshold.
+      const target = floor + rng.amountMinor(0, 500);
+      const allowed = Math.max(0, balance - target);
       if (allowed < 100) continue; // nothing meaningful left to spend; skip
       signed = -Math.min(Math.abs(signed), allowed);
     }

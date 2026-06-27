@@ -164,24 +164,24 @@ export function normalizeSpec(input: unknown): {
     spec.dateRange.start = toISODate(start);
   }
 
-  // Estimated volume cap
+  // Volume ceiling (keeps in-browser generation responsive).
   const est = estimateTransactionCount(spec);
   if (est > LIMITS.maxTransactions) {
     const factor = LIMITS.maxTransactions / est;
     spec.avgTransactionsPerAccountPerMonth = Math.max(
-      0,
+      1,
       Math.floor(spec.avgTransactionsPerAccountPerMonth * factor),
     );
     notes.push(
-      `Estimated ~${est.toLocaleString()} transactions exceeded the ${LIMITS.maxTransactions.toLocaleString()} cap; ` +
-        `transactions-per-account were reduced to stay within it.`,
+      `Estimated ~${est.toLocaleString()} transactions is above the ${LIMITS.maxTransactions.toLocaleString()} ceiling, ` +
+        `so transactions per account were scaled down to ${spec.avgTransactionsPerAccountPerMonth}/month. ` +
+        `The final dataset stays at or below the ceiling.`,
     );
   }
 
-  // If joint ownership edge case is on but ratio is ~0, give it a floor.
-  if (spec.edgeCases.jointOwnership && spec.jointOwnershipRatio < 0.05) {
-    spec.jointOwnershipRatio = 0.15;
-  }
+  // Joint ownership is driven solely by its ratio (a single UI control), so the
+  // internal edge flag is derived from it and a toggle/slider can never disagree.
+  spec.edgeCases.jointOwnership = spec.jointOwnershipRatio > 0;
 
   return { spec, notes };
 }
@@ -205,11 +205,38 @@ export function monthsBetween(startISO: string, endISO: string): number {
   return Math.max(0, days / 30.44);
 }
 
-/** Rough up-front estimate of how many transactions a spec will produce. */
+const LOAN_PRODUCT_SET = new Set<string>(["loan_auto", "loan_mortgage", "loan_personal", "credit_line"]);
+const ESTIMATE_WEIGHTS: Record<string, number> = {
+  checking: 32, savings: 24, money_market: 8, cd: 8,
+  credit_line: 10, loan_auto: 7, loan_personal: 5, loan_mortgage: 3,
+};
+
+/**
+ * Up-front estimate of how many transactions a spec will produce. Deposit and
+ * loan accounts behave very differently — a deposit account gets ~avgTxns/month
+ * of activity plus monthly interest/funding, while a loan/credit line gets ~2
+ * per month (interest + payment). We split the account pool by product weight
+ * (with a primary-deposit bias, since each party's first account is a deposit
+ * when available) and estimate each part. Labeled "≈" in the UI — not exact.
+ */
 export function estimateTransactionCount(spec: GenerationSpec): number {
-  const accounts = Math.round(spec.partyCount * spec.avgAccountsPerParty);
-  const months = monthsBetween(spec.dateRange.start, spec.dateRange.end);
-  const core = accounts * months * spec.avgTransactionsPerAccountPerMonth;
-  // + interest/fee/funding overhead, roughly 15%
-  return Math.round(core * 1.15);
+  const totalAccounts = spec.partyCount * spec.avgAccountsPerParty;
+  const months = monthsBetween(spec.dateRange.start, spec.dateRange.end) + 1;
+
+  const hasDeposit = spec.products.some((p) => !LOAN_PRODUCT_SET.has(p));
+  let wLoan = 0;
+  let wAll = 0;
+  for (const p of spec.products) {
+    const w = ESTIMATE_WEIGHTS[p] ?? 5;
+    wAll += w;
+    if (LOAN_PRODUCT_SET.has(p)) wLoan += w;
+  }
+  let loanFrac = wAll ? wLoan / wAll : 0;
+  if (hasDeposit) loanFrac *= 0.7; // first account per party is a deposit
+
+  const depositAccts = totalAccounts * (1 - loanFrac);
+  const loanAccts = totalAccounts * loanFrac;
+  const depositTxns = depositAccts * months * (spec.avgTransactionsPerAccountPerMonth + 1.2);
+  const loanTxns = loanAccts * months * 2;
+  return Math.round(depositTxns + loanTxns);
 }

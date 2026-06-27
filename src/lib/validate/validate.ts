@@ -169,8 +169,10 @@ export function validateDataset(ds: Dataset): ValidationResult {
     dormantAccounts: ds.accounts.some((a) => a.status === "dormant"),
     atLimitAccounts: ds.accounts.some((a) => a.tags.includes("at_limit")),
     backdatedPostings: ds.transactions.some((t) => t.tags.includes("backdated")),
+    // Validate the ACTUAL condition the user asked for — a real wire whose
+    // amount exceeds the threshold — not merely the presence of a tag.
     largeWires: ds.transactions.some(
-      (t) => t.tags.includes("large_wire") || (t.category === "wire" && Math.abs(t.amountMinor) > ds.meta.spec.largeWireThresholdMinor),
+      (t) => t.category === "wire" && Math.abs(t.amountMinor) > ds.meta.spec.largeWireThresholdMinor,
     ),
     newAccountFunding: ds.accounts.some((a) => a.tags.includes("new_funding")),
     closedWithResidual:

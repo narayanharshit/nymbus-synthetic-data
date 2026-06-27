@@ -15,7 +15,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { INSTITUTION_TYPES, PRODUCT_TYPES } from "../domain/types";
-import type { DeepPartial } from "./merge";
+import type { Confidence, DeepPartial } from "./merge";
 import type { GenerationSpec } from "../domain/spec";
 
 const DEFAULT_MODEL = "claude-opus-4-8";
@@ -30,7 +30,10 @@ Rules:
 - Map vague volume words to numbers: "light" ~4 txns/account/month, "moderate" ~8, "heavy/high-volume" ~16.
 - Parse counts ("about 250 customers" -> partyCount 250) and relative date ranges ("last 90 days", "past 6 months") into concrete YYYY-MM-DD dates relative to today.
 - If something isn't stated, leave it out (downstream defaults handle it) rather than guessing wildly.
-- In "assumptions", briefly note the meaningful inferences you made, in plain language a consultant would understand. Keep each note short.`;
+- In "assumptions", briefly note the meaningful inferences you made, in plain language a consultant would understand. Keep each note short.
+- Set "confidence": "high" if the description is clear, "medium" if it is sparse or vague, "low" if it is gibberish or has no real banking content. If "low", do NOT invent details — leave fields out and say so.
+- For a credit union with no mention of business/commercial customers, keep businessRatio low (~0.03-0.05); community banks carry a few more businesses.
+- List anything you genuinely could not determine from the description in "notUnderstood".`;
 
 const inputSchema = {
   type: "object" as const,
@@ -71,14 +74,23 @@ const inputSchema = {
         largeWires: { type: "boolean" },
         newAccountFunding: { type: "boolean" },
         closedWithResidual: { type: "boolean" },
-        jointOwnership: { type: "boolean" },
       },
-      description: "Turn on ONLY the edge cases the consultant asked for.",
+      description: "Turn on ONLY the edge cases the consultant asked for. (Joint ownership is the jointOwnershipRatio field, not here.)",
     },
     assumptions: {
       type: "array",
       items: { type: "string" },
       description: "Short plain-language notes on the inferences you made.",
+    },
+    confidence: {
+      type: "string",
+      enum: ["high", "medium", "low"],
+      description: "How confident you are that you understood the description.",
+    },
+    notUnderstood: {
+      type: "array",
+      items: { type: "string" },
+      description: "Anything you could not determine from the description.",
     },
   },
   required: [],
@@ -107,11 +119,13 @@ const LlmOutputSchema = z.object({
     .object({
       nsfOverdraft: z.boolean(), dormantAccounts: z.boolean(), atLimitAccounts: z.boolean(),
       backdatedPostings: z.boolean(), largeWires: z.boolean(), newAccountFunding: z.boolean(),
-      closedWithResidual: z.boolean(), jointOwnership: z.boolean(),
+      closedWithResidual: z.boolean(),
     })
     .partial()
     .optional(),
   assumptions: z.array(z.string()).optional(),
+  confidence: z.enum(["high", "medium", "low"]).optional(),
+  notUnderstood: z.array(z.string()).optional(),
 });
 
 export function hasLlmKey(): boolean {
@@ -120,7 +134,7 @@ export function hasLlmKey(): boolean {
 
 export async function llmInterpret(
   text: string,
-): Promise<{ patch: DeepPartial<GenerationSpec>; notes: string[]; model: string }> {
+): Promise<{ patch: DeepPartial<GenerationSpec>; notes: string[]; model: string; confidence: Confidence }> {
   if (!hasLlmKey()) throw new Error("ANTHROPIC_API_KEY not set");
 
   const model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
@@ -178,6 +192,9 @@ export async function llmInterpret(
     patch.dateRange = { start: o.dateRangeStart, end: o.dateRangeEnd };
   }
   if (o.assumptions) notes.push(...o.assumptions);
+  if (o.notUnderstood && o.notUnderstood.length) {
+    notes.push("Couldn't determine from your description: " + o.notUnderstood.join("; ") + ".");
+  }
 
-  return { patch, notes, model };
+  return { patch, notes, model, confidence: o.confidence ?? "high" };
 }

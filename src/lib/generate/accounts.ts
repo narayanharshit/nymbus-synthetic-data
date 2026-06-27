@@ -26,15 +26,51 @@ import { BRANCHES } from "./pools";
 import { accountNumber, formatId } from "./identity";
 import { addDays, daysBetween, fromISO, isoMonthsLater, randomDateISO, toISO } from "./dates";
 
-const PRODUCT_NAMES: Record<ProductType, string[]> = {
-  checking: ["Everyday Checking", "Hometown Checking", "Premier Checking", "Free Checking"],
-  savings: ["Statement Savings", "High-Yield Savings", "Holiday Club Savings"],
-  money_market: ["Money Market", "Premier Money Market"],
-  cd: ["Certificate of Deposit"],
-  loan_auto: ["Auto Loan"],
-  loan_mortgage: ["30-Year Fixed Mortgage", "15-Year Fixed Mortgage"],
-  loan_personal: ["Personal Loan"],
-  credit_line: ["Personal Line of Credit", "Business Line of Credit"],
+/**
+ * Product variants. Rate, term, and minimum balance are properties of the named
+ * product — every "Hometown Checking" carries the same rate. Only per-account
+ * facts (balance, principal, credit limit) vary between accounts of the same product.
+ */
+interface ProductVariant {
+  name: string;
+  rateBps: number;
+  minBalanceMinor?: number;
+  termMonths?: number; // fixed term (CDs, mortgages)
+  termOptions?: number[]; // contract term varies per account (installment loans)
+}
+
+const PRODUCT_VARIANTS: Record<ProductType, ProductVariant[]> = {
+  checking: [
+    { name: "Everyday Checking", rateBps: 0, minBalanceMinor: 0 },
+    { name: "Free Checking", rateBps: 0, minBalanceMinor: 0 },
+    { name: "Hometown Checking", rateBps: 5, minBalanceMinor: 0 },
+    { name: "Premier Checking", rateBps: 15, minBalanceMinor: 250000 },
+  ],
+  savings: [
+    { name: "Statement Savings", rateBps: 75, minBalanceMinor: 0 },
+    { name: "High-Yield Savings", rateBps: 140, minBalanceMinor: 250000 },
+    { name: "Holiday Club Savings", rateBps: 50, minBalanceMinor: 0 },
+  ],
+  money_market: [
+    { name: "Money Market", rateBps: 200, minBalanceMinor: 150000 },
+    { name: "Premier Money Market", rateBps: 280, minBalanceMinor: 250000 },
+  ],
+  cd: [
+    { name: "12-Month Certificate of Deposit", rateBps: 330, termMonths: 12 },
+    { name: "24-Month Certificate of Deposit", rateBps: 380, termMonths: 24 },
+    { name: "36-Month Certificate of Deposit", rateBps: 415, termMonths: 36 },
+    { name: "60-Month Certificate of Deposit", rateBps: 460, termMonths: 60 },
+  ],
+  loan_auto: [{ name: "Auto Loan", rateBps: 649, termOptions: [48, 60, 72] }],
+  loan_mortgage: [
+    { name: "30-Year Fixed Mortgage", rateBps: 662, termMonths: 360 },
+    { name: "15-Year Fixed Mortgage", rateBps: 599, termMonths: 180 },
+  ],
+  loan_personal: [{ name: "Personal Loan", rateBps: 1199, termOptions: [24, 36, 60] }],
+  credit_line: [
+    { name: "Personal Line of Credit", rateBps: 1499 },
+    { name: "Business Line of Credit", rateBps: 1299 },
+  ],
 };
 
 /** Relative weights for which products a party opens (only in-scope ones count). */
@@ -70,88 +106,61 @@ function buildProductAttrs(
   openDateISO: string,
   openedInWindow: boolean,
 ): ProductAttrs {
-  const name = rng.pick(PRODUCT_NAMES[product]);
+  const v = rng.pick(PRODUCT_VARIANTS[product]);
+  const term = v.termMonths ?? (v.termOptions ? rng.pick(v.termOptions) : undefined);
+  // Rate, term, and minimum balance come from the product definition (consistent
+  // across all accounts of this product); only balances/principal vary per account.
+  const base: ProductAttrs = {
+    productName: v.name,
+    interestRateBps: v.rateBps,
+    termMonths: term,
+    minimumBalanceMinor: v.minBalanceMinor,
+    openingBalanceMinor: 0,
+  };
 
   switch (product) {
-    case "checking": {
-      const min = rng.bool(0.5) ? 0 : 10000;
-      return {
-        productName: name,
-        interestRateBps: rng.bool(0.3) ? rng.int(1, 15) : 0,
-        minimumBalanceMinor: min,
-        openingBalanceMinor: openedInWindow
-          ? 0
-          : Math.round(rng.gaussian(2500, 2500, 50, 18000)) * 100,
-      };
-    }
-    case "savings": {
-      return {
-        productName: name,
-        interestRateBps: rng.int(50, 150),
-        minimumBalanceMinor: rng.bool(0.5) ? 0 : 2500,
-        openingBalanceMinor: openedInWindow
-          ? 0
-          : Math.round(rng.gaussian(6000, 6000, 100, 45000)) * 100,
-      };
-    }
-    case "money_market": {
-      return {
-        productName: name,
-        interestRateBps: rng.int(150, 300),
-        minimumBalanceMinor: rng.int(1000, 2500) * 100,
-        openingBalanceMinor: openedInWindow
-          ? 0
-          : Math.round(rng.gaussian(22000, 18000, 1500, 120000)) * 100,
-      };
-    }
+    case "checking":
+      return { ...base, openingBalanceMinor: openedInWindow ? 0 : Math.round(rng.gaussian(2500, 2500, 50, 18000)) * 100 };
+    case "savings":
+      return { ...base, openingBalanceMinor: openedInWindow ? 0 : Math.round(rng.gaussian(6000, 6000, 100, 45000)) * 100 };
+    case "money_market":
+      return { ...base, openingBalanceMinor: openedInWindow ? 0 : Math.round(rng.gaussian(22000, 18000, 1500, 120000)) * 100 };
     case "cd": {
-      const term = rng.pick([12, 24, 36, 60]);
       const principal = rng.int(5, 75) * 1000;
       return {
-        productName: `${term}-Month ${name}`,
-        interestRateBps: 300 + term * 3 + rng.int(0, 50),
-        termMonths: term,
+        ...base,
         minimumBalanceMinor: principal * 100,
-        maturityDate: isoMonthsLater(openDateISO, term),
+        maturityDate: isoMonthsLater(openDateISO, term ?? 12),
         openingBalanceMinor: openedInWindow ? 0 : principal * 100,
       };
     }
     case "loan_auto": {
-      const term = rng.pick([48, 60, 72]);
       const principal = rng.int(12, 45) * 1000;
       const remaining = openedInWindow ? principal : Math.round(principal * rng.float(0.3, 0.95));
       return {
-        productName: name,
-        interestRateBps: rng.int(500, 900),
-        termMonths: term,
+        ...base,
         originalPrincipalMinor: principal * 100,
-        maturityDate: isoMonthsLater(openDateISO, term),
+        maturityDate: isoMonthsLater(openDateISO, term ?? 60),
         openingBalanceMinor: openedInWindow ? 0 : -remaining * 100,
       };
     }
     case "loan_mortgage": {
-      const term = rng.pick([180, 360]);
       const principal = rng.int(120, 450) * 1000;
       const remaining = openedInWindow ? principal : Math.round(principal * rng.float(0.5, 0.98));
       return {
-        productName: term === 180 ? "15-Year Fixed Mortgage" : "30-Year Fixed Mortgage",
-        interestRateBps: rng.int(550, 750),
-        termMonths: term,
+        ...base,
         originalPrincipalMinor: principal * 100,
-        maturityDate: isoMonthsLater(openDateISO, term),
+        maturityDate: isoMonthsLater(openDateISO, term ?? 360),
         openingBalanceMinor: openedInWindow ? 0 : -remaining * 100,
       };
     }
     case "loan_personal": {
-      const term = rng.pick([24, 36, 60]);
       const principal = rng.int(3, 25) * 1000;
       const remaining = openedInWindow ? principal : Math.round(principal * rng.float(0.2, 0.9));
       return {
-        productName: name,
-        interestRateBps: rng.int(900, 1600),
-        termMonths: term,
+        ...base,
         originalPrincipalMinor: principal * 100,
-        maturityDate: isoMonthsLater(openDateISO, term),
+        maturityDate: isoMonthsLater(openDateISO, term ?? 36),
         openingBalanceMinor: openedInWindow ? 0 : -remaining * 100,
       };
     }
@@ -159,8 +168,7 @@ function buildProductAttrs(
       const limit = rng.int(5, 50) * 1000;
       const util = openedInWindow ? 0 : rng.float(0, 0.6);
       return {
-        productName: name,
-        interestRateBps: rng.int(1000, 1800),
+        ...base,
         creditLimitMinor: limit * 100,
         openingBalanceMinor: -Math.round(limit * util) * 100,
       };

@@ -68,6 +68,37 @@
 
 ---
 
+## Round 2 — review-driven hardening (calibrated confidence)
+
+The strongest piece of feedback: the tool validated what it *generated*, not whether it generated
+what the user *asked for*, and it never signaled uncertainty. That's the judgment an Applied-AI
+reviewer is testing, so it's where I focused.
+
+- **Uncertainty is now visible.** Both interpreters return a confidence level; the Confirm screen
+  shows a prominent banner when confidence is low/medium. Gibberish no longer sails through to a
+  confident spec — it warns and defaults explicitly.
+- **The specific request is proven, not just claimed.** Large wires are generated as real wires
+  above the threshold (a balance-clamp could previously shrink an outgoing wire below it), and the
+  validator checks the *actual* amount exceeds the threshold, not a tag. The preview is sortable
+  with a precise category filter and a "flagged only" toggle, so a tester sorts wires by amount and
+  sees the >$50k ones immediately.
+- **Realism:** interest rate is a property of the named product (every "Hometown Checking" shares a
+  rate); balances no longer all clamp to an artificial $5.00 (varied per-account cushions);
+  estimate-vs-actual tightened to ~7% on realistic specs; the volume cap is described as a ceiling.
+- **UX:** joint ownership is a single control (the slider) instead of a contradictory toggle+slider;
+  empty input gives feedback; defaults are institution-aware (a credit union defaults to mostly
+  consumers); the seed is exposed for reproducibility.
+
+Deliberately deferred to the +1-day list: saved / named / shareable configs (#12); a "watch the
+validator catch a deliberately broken record" trust demo (#14); a Web Worker / streaming export for
+10×-scale datasets (#15, currently bounded by the generation cap); a formal accessibility pass (#16 —
+layout verified responsive on mobile).
+
+**One thing only you can do:** set `ANTHROPIC_API_KEY` in Vercel so the AI interpreter is ON in the
+submitted artifact (#3) — without it the deployed app runs the deterministic keyword fallback.
+
+---
+
 ## Smoke-test output (`npm run smoke`, no API key — heuristic path)
 
 All three cases pass validation; balances reconcile on an independent recompute.

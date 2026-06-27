@@ -34,22 +34,23 @@ export async function POST(req: Request) {
 
   // Guided-only path: no free text, just normalize whatever fields were set.
   if (!text.trim()) {
-    const result = finalizeInterpretation(baseSpec, {}, [], "heuristic");
+    const result = finalizeInterpretation(baseSpec, {}, [], "heuristic", "high");
     return NextResponse.json({ ...result, llmAvailable: hasLlmKey() });
   }
 
   if (hasLlmKey()) {
     try {
-      const { patch, notes, model } = await llmInterpret(text);
-      const result = finalizeInterpretation(baseSpec, patch, notes, "llm");
+      const { patch, notes, model, confidence } = await llmInterpret(text);
+      const result = finalizeInterpretation(baseSpec, patch, notes, "llm", confidence);
       return NextResponse.json({ ...result, llmAvailable: true, model });
     } catch (e) {
-      const { patch, notes } = heuristicInterpret(text);
+      const { patch, notes, confidence } = heuristicInterpret(text);
       const result = finalizeInterpretation(
         baseSpec,
         patch,
         ["The AI interpreter was unavailable, so the built-in keyword parser was used instead.", ...notes],
         "heuristic",
+        confidence,
       );
       return NextResponse.json({
         ...result,
@@ -60,7 +61,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const { patch, notes } = heuristicInterpret(text);
-  const result = finalizeInterpretation(baseSpec, patch, notes, "heuristic");
+  const { patch, notes, confidence } = heuristicInterpret(text);
+  const result = finalizeInterpretation(baseSpec, patch, notes, "heuristic", confidence);
   return NextResponse.json({ ...result, llmAvailable: false });
 }

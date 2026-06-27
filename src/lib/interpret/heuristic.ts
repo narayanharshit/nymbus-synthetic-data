@@ -10,12 +10,13 @@
 
 import type { ProductType } from "../domain/types";
 import { toISODate } from "../domain/spec";
-import type { DeepPartial } from "./merge";
+import type { Confidence, DeepPartial } from "./merge";
 import type { GenerationSpec } from "../domain/spec";
 
 interface Patch {
   patch: DeepPartial<GenerationSpec>;
   notes: string[];
+  confidence: Confidence;
 }
 
 const PRODUCT_KEYWORDS: [RegExp, ProductType][] = [
@@ -32,30 +33,37 @@ const PRODUCT_KEYWORDS: [RegExp, ProductType][] = [
 export function heuristicInterpret(text: string): Patch {
   const t = (text || "").toLowerCase();
   const patch: DeepPartial<GenerationSpec> = {};
-  const notes: string[] = ["Interpreted with built-in keyword rules (no LLM key configured)."];
+  const notes: string[] = [];
   const edgeCases: DeepPartial<GenerationSpec["edgeCases"]> = {};
+  let signals = 0; // how many distinct things we actually recognized
 
   // Institution type
   if (/credit union|\bcu\b|members?\b/.test(t)) {
     patch.institutionType = "credit_union";
+    signals++;
   } else if (/community bank|\bbank\b/.test(t)) {
     patch.institutionType = "community_bank";
+    signals++;
   }
 
   // Party count: "about 250 customers", "200 members", "150 clients"
   const countMatch = t.match(/([\d][\d,]*)\s*(customers|members|clients|households|parties|accounts holders|people)/);
   if (countMatch) {
     const n = parseInt(countMatch[1].replace(/,/g, ""), 10);
-    if (!Number.isNaN(n)) patch.partyCount = n;
+    if (!Number.isNaN(n)) {
+      patch.partyCount = n;
+      signals++;
+    }
   }
 
-  // Business orientation
-  if (/business|commercial|operating account|companies|llc/.test(t)) {
-    if (/mostly|primarily|majority|focus(ed)? on (business|commercial)/.test(t)) {
-      patch.businessRatio = 0.6;
-    } else {
-      patch.businessRatio = 0.3;
-    }
+  // Business orientation (and an institution-aware default when unstated)
+  const businessMentioned = /business|commercial|operating account|companies|\bllc\b/.test(t);
+  if (businessMentioned) {
+    patch.businessRatio = /mostly|primarily|majority|focus(ed)? on (business|commercial)/.test(t) ? 0.6 : 0.3;
+    signals++;
+  } else if (patch.institutionType) {
+    // Credit unions are member/consumer-heavy; community banks carry a few more businesses.
+    patch.businessRatio = patch.institutionType === "credit_union" ? 0.04 : 0.12;
   }
 
   // Products
@@ -66,6 +74,7 @@ export function heuristicInterpret(text: string): Patch {
   }
   if (products.length) {
     patch.products = Array.from(new Set(products));
+    signals++;
   }
 
   // Date range from relative phrases
@@ -73,6 +82,7 @@ export function heuristicInterpret(text: string): Patch {
   if (range) {
     patch.dateRange = range.range;
     if (range.note) notes.push(range.note);
+    signals++;
   } else {
     notes.push("No date range mentioned — defaulted to the last 90 days.");
   }
@@ -80,30 +90,37 @@ export function heuristicInterpret(text: string): Patch {
   // Volume tier
   if (/high[- ]?volume|heavy|busy|lots of (transactions|activity)/.test(t)) {
     patch.avgTransactionsPerAccountPerMonth = 16;
+    signals++;
   } else if (/low[- ]?volume|light|quiet|little activity|few transactions/.test(t)) {
     patch.avgTransactionsPerAccountPerMonth = 4;
+    signals++;
   }
   const perAcct = t.match(/([\d]+)\s*(transactions|txns?)\s*(per|\/)\s*(account|month)/);
-  if (perAcct) patch.avgTransactionsPerAccountPerMonth = parseInt(perAcct[1], 10);
+  if (perAcct) {
+    patch.avgTransactionsPerAccountPerMonth = parseInt(perAcct[1], 10);
+    signals++;
+  }
 
-  // Joint ownership
+  // Joint ownership is a single magnitude control (the ratio), not a toggle.
   if (/\bjoint\b|co-?owner|co-?borrower|shared account/.test(t)) {
-    edgeCases.jointOwnership = true;
     patch.jointOwnershipRatio = /many|lots|mostly/.test(t) ? 0.35 : 0.2;
+    signals++;
   }
 
   // Edge cases
-  if (/overdraft|nsf|insufficient|bounced|returned item/.test(t)) edgeCases.nsfOverdraft = true;
-  if (/dormant|inactive|stale account/.test(t)) edgeCases.dormantAccounts = true;
-  if (/at (the )?limit|maxed|over[- ]?limit|product limit|near maturity/.test(t)) edgeCases.atLimitAccounts = true;
-  if (/backdated|holiday posting|weekend posting|posting delay/.test(t)) edgeCases.backdatedPostings = true;
-  if (/new[- ]?account|new funding|newly opened|just opened|de ?novo|onboarding/.test(t)) edgeCases.newAccountFunding = true;
-  if (/closed account|closed.*residual|residual activity/.test(t)) edgeCases.closedWithResidual = true;
+  let edgeFound = false;
+  if (/overdraft|nsf|insufficient|bounced|returned item/.test(t)) { edgeCases.nsfOverdraft = true; edgeFound = true; }
+  if (/dormant|inactive|stale account/.test(t)) { edgeCases.dormantAccounts = true; edgeFound = true; }
+  if (/at (the )?limit|maxed|over[- ]?limit|product limit|near maturity/.test(t)) { edgeCases.atLimitAccounts = true; edgeFound = true; }
+  if (/backdated|holiday posting|weekend posting|posting delay/.test(t)) { edgeCases.backdatedPostings = true; edgeFound = true; }
+  if (/new[- ]?account|new funding|newly opened|just opened|de ?novo|onboarding/.test(t)) { edgeCases.newAccountFunding = true; edgeFound = true; }
+  if (/closed account|closed.*residual|residual activity/.test(t)) { edgeCases.closedWithResidual = true; edgeFound = true; }
 
   // Large wires + threshold
   const wireAmt = t.match(/(wires?|transfers?)[^.]*?(over|above|exceed(?:ing)?|greater than|>)\s*\$?\s*([\d,]+)\s*(k|thousand|million|m)?/);
   if (/large wire|wires? over|high[- ]?dollar wire|wire(s)? (above|over)/.test(t) || wireAmt) {
     edgeCases.largeWires = true;
+    edgeFound = true;
     if (wireAmt) {
       let dollars = parseInt(wireAmt[3].replace(/,/g, ""), 10);
       const unit = wireAmt[4];
@@ -115,13 +132,25 @@ export function heuristicInterpret(text: string): Patch {
       }
     }
   }
+  if (edgeFound) signals++;
 
   if (Object.keys(edgeCases).length) patch.edgeCases = edgeCases;
 
   if (!countMatch) notes.push("No customer count found — using the default scale (edit on the next screen).");
   if (!products.length) notes.push("No specific products named — using a standard retail product set.");
 
-  return { patch, notes };
+  // Calibrated confidence: did we actually understand the input?
+  const confidence: Confidence = signals === 0 ? "low" : signals <= 2 ? "medium" : "high";
+  if (confidence === "low") {
+    notes.unshift(
+      "⚠️ I couldn't confidently understand that description — I matched no recognizable banking details, " +
+        "so everything below is a default. Please review carefully, or rephrase and try again.",
+    );
+  } else {
+    notes.unshift("Interpreted with built-in keyword rules (no LLM key configured).");
+  }
+
+  return { patch, notes, confidence };
 }
 
 function parseDateRange(t: string): { range: { start: string; end: string }; note?: string } | null {
