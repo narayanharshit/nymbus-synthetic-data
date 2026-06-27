@@ -20,7 +20,6 @@ type DeepPartial<T> = {
 
 export interface ArchetypePreset {
   id: string;
-  emoji: string;
   label: string;
   blurb: string;
   /** Plain-language description matching this archetype (also a great demo input). */
@@ -31,7 +30,6 @@ export interface ArchetypePreset {
 export const PRESETS: ArchetypePreset[] = [
   {
     id: "community_retail",
-    emoji: "🏦",
     label: "Small community bank — retail-heavy",
     blurb:
       "Mostly consumer checking & savings, debit-card driven, a few auto loans and credit lines.",
@@ -50,7 +48,6 @@ export const PRESETS: ArchetypePreset[] = [
   },
   {
     id: "credit_union_lending",
-    emoji: "🤝",
     label: "Credit union — strong lending",
     blurb:
       "Member-owned, heavy on auto/personal/mortgage loans, lots of joint accounts.",
@@ -77,7 +74,6 @@ export const PRESETS: ArchetypePreset[] = [
   },
   {
     id: "business_banking",
-    emoji: "🏢",
     label: "Business & commercial focus",
     blurb:
       "Majority business parties, money-market and operating accounts, wires and large dollars.",
@@ -97,7 +93,6 @@ export const PRESETS: ArchetypePreset[] = [
   },
   {
     id: "bsa_exceptions",
-    emoji: "🔎",
     label: "BSA / AML & exceptions testing",
     blurb:
       "Every edge case on — overdrafts, dormancy, large wires, backdating, closed-with-residual.",
@@ -125,7 +120,6 @@ export const PRESETS: ArchetypePreset[] = [
   },
   {
     id: "de_novo",
-    emoji: "🌱",
     label: "De novo branch — mostly new accounts",
     blurb:
       "Small, recent, lots of new-account funding and first-transaction activity.",

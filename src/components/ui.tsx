@@ -1,4 +1,4 @@
-/** Small, dependency-free UI primitives shared across the studio. */
+/** Small UI primitives, styled from the design tokens in globals.css. */
 import * as React from "react";
 
 export function cn(...parts: (string | false | null | undefined)[]): string {
@@ -12,24 +12,19 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
 export function Button({ variant = "primary", size = "md", className, ...rest }: ButtonProps) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed";
-  const sizes = { sm: "text-sm px-3 py-1.5", md: "text-sm px-4 py-2.5" };
+    "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed";
+  const sizes = { sm: "text-[12px] px-2.5 py-1.5", md: "text-[13px] px-3.5 py-2" };
   const variants = {
-    primary: "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm",
-    secondary: "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 shadow-sm",
-    ghost: "text-slate-600 hover:bg-slate-100",
-    danger: "bg-white text-red-600 border border-red-200 hover:bg-red-50",
+    primary: "bg-accent text-white hover:bg-accent-hover",
+    secondary: "bg-surface text-ink border border-line hover:bg-sunken",
+    ghost: "text-ink-muted hover:bg-sunken",
+    danger: "bg-surface text-fail border border-line hover:bg-fail-bg",
   };
   return <button className={cn(base, sizes[size], variants[variant], className)} {...rest} />;
 }
 
 export function Card({ className, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn("rounded-xl border border-slate-200 bg-white shadow-sm", className)}
-      {...rest}
-    />
-  );
+  return <div className={cn("rounded-md border border-line bg-surface", className)} {...rest} />;
 }
 
 export function Badge({
@@ -42,17 +37,17 @@ export function Badge({
   children: React.ReactNode;
 }) {
   const tones = {
-    slate: "bg-slate-100 text-slate-700",
-    green: "bg-green-100 text-green-800",
-    red: "bg-red-100 text-red-800",
-    amber: "bg-amber-100 text-amber-800",
-    indigo: "bg-indigo-100 text-indigo-800",
-    blue: "bg-blue-100 text-blue-800",
+    slate: "bg-sunken text-ink-muted",
+    green: "bg-pass-bg text-pass",
+    red: "bg-fail-bg text-fail",
+    amber: "bg-warn-bg text-warn",
+    indigo: "bg-accent-weak text-accent",
+    blue: "bg-accent-weak text-accent",
   };
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium",
         tones[tone],
         className,
       )}
@@ -73,22 +68,22 @@ export function Field({
 }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <span className="text-[12px] font-medium text-ink">{label}</span>
       {children}
-      {hint && <span className="text-xs text-slate-500">{hint}</span>}
+      {hint && <span className="text-[11.5px] text-ink-faint">{hint}</span>}
     </label>
   );
 }
 
 const inputBase =
-  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+  "w-full rounded-md border border-line bg-surface px-2.5 py-2 text-[13px] text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={cn(inputBase, props.className)} />;
 }
 
 export function NumberInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input type="number" {...props} className={cn(inputBase, props.className)} />;
+  return <input type="number" {...props} className={cn(inputBase, "tnum", props.className)} />;
 }
 
 export function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -115,26 +110,26 @@ export function Toggle({
       type="button"
       onClick={() => onChange(!checked)}
       className={cn(
-        "flex items-start gap-3 rounded-lg border p-3 text-left transition-colors",
-        checked ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50",
+        "flex items-start gap-3 rounded-md border p-3 text-left transition-colors",
+        checked ? "border-accent/40 bg-accent-weak" : "border-line bg-surface hover:bg-sunken",
       )}
     >
       <span
         className={cn(
           "mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition-colors",
-          checked ? "bg-indigo-600" : "bg-slate-300",
+          checked ? "bg-accent" : "bg-line-strong",
         )}
       >
         <span
           className={cn(
-            "h-4 w-4 rounded-full bg-white shadow transition-transform",
+            "h-4 w-4 rounded-full bg-white transition-transform",
             checked ? "translate-x-4" : "translate-x-0",
           )}
         />
       </span>
       <span className="flex flex-col">
-        <span className="text-sm font-medium text-slate-800">{label}</span>
-        {description && <span className="text-xs text-slate-500">{description}</span>}
+        <span className="text-[13px] font-medium text-ink">{label}</span>
+        {description && <span className="text-[11.5px] text-ink-faint">{description}</span>}
       </span>
     </button>
   );
@@ -142,12 +137,7 @@ export function Toggle({
 
 export function Spinner({ className }: { className?: string }) {
   return (
-    <svg
-      className={cn("animate-spin", className)}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
+    <svg className={cn("animate-spin", className)} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
     </svg>

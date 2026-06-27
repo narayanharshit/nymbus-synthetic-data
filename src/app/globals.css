@@ -1,30 +1,89 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens. Near-monochrome, Nymbus royal blue as the single accent
+ * (reserved for the primary action + active state), navy for the one dark
+ * surface. IBM Plex Sans for UI, IBM Plex Mono for all data.
+ */
 :root {
-  --background: #f6f7f9;
-  --foreground: #0f172a;
+  --paper: #f6f7f9;
+  --surface: #ffffff;
+  --sunken: #eef1f4;
+  --line: #e2e6ea;
+  --line-strong: #cbd2d9;
+
+  --ink: #14171a;
+  --ink-muted: #5a626b;
+  --ink-faint: #8c949d;
+
+  --navy: #0b1e36;
+  --navy-line: #244c74;
+
+  --accent: #1b57d6;
+  --accent-hover: #1648b0;
+  --accent-weak: #e7eefc;
+
+  --pass: #157347;
+  --pass-bg: #e6f2eb;
+  --warn: #8a5a00;
+  --warn-bg: #fbf1dd;
+  --fail: #b42318;
+  --fail-bg: #fbeae8;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-navy: var(--navy);
+  --color-navy-line: var(--navy-line);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-weak: var(--accent-weak);
+  --color-pass: var(--pass);
+  --color-pass-bg: var(--pass-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-fail: var(--fail);
+  --color-fail-bg: var(--fail-bg);
+  --font-sans: var(--font-plex-sans);
+  --font-mono: var(--font-plex-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-plex-sans), system-ui, -apple-system, sans-serif;
+  font-size: 13px;
 }
 
-/* Thin, unobtrusive scrollbars inside data tables */
+/* Uppercase, tracked micro-label — the section-header treatment. */
+.micro {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
 .thin-scroll::-webkit-scrollbar {
-  height: 8px;
-  width: 8px;
+  height: 9px;
+  width: 9px;
 }
 .thin-scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--line-strong);
   border-radius: 9999px;
 }
 .thin-scroll::-webkit-scrollbar-track {
