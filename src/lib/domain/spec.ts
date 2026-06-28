@@ -168,14 +168,12 @@ export function normalizeSpec(input: unknown): {
   const est = estimateTransactionCount(spec);
   if (est > LIMITS.maxTransactions) {
     const factor = LIMITS.maxTransactions / est;
-    spec.avgTransactionsPerAccountPerMonth = Math.max(
-      1,
-      Math.floor(spec.avgTransactionsPerAccountPerMonth * factor),
-    );
+    const before = spec.avgTransactionsPerAccountPerMonth;
+    spec.avgTransactionsPerAccountPerMonth = Math.max(1, Math.floor(before * factor));
     notes.push(
       `Estimated ~${est.toLocaleString()} transactions is above the ${LIMITS.maxTransactions.toLocaleString()} ceiling, ` +
-        `so transactions per account were scaled down to ${spec.avgTransactionsPerAccountPerMonth}/month. ` +
-        `The final dataset stays at or below the ceiling.`,
+        `so transactions per account were scaled down from ${before} to ${spec.avgTransactionsPerAccountPerMonth}/month ` +
+        `to stay at or below it.`,
     );
   }
 
@@ -236,7 +234,10 @@ export function estimateTransactionCount(spec: GenerationSpec): number {
 
   const depositAccts = totalAccounts * (1 - loanFrac);
   const loanAccts = totalAccounts * loanFrac;
-  const depositTxns = depositAccts * months * (spec.avgTransactionsPerAccountPerMonth + 1.2);
+  // Dormant accounts generate almost nothing; closed accounts stop partway.
+  const activeFrac =
+    1 - (spec.edgeCases.dormantAccounts ? 0.12 : 0) - (spec.edgeCases.closedWithResidual ? 0.07 : 0);
+  const depositTxns = depositAccts * months * (spec.avgTransactionsPerAccountPerMonth + 1.2) * activeFrac;
   const loanTxns = loanAccts * months * 2;
   return Math.round(depositTxns + loanTxns);
 }

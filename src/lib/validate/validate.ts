@@ -228,6 +228,32 @@ export function validateDataset(ds: Dataset): ValidationResult {
   const missingFeasible = requested.filter((k) => !has[k] && feasible[k]);
   const missingInfeasible = requested.filter((k) => !has[k] && !feasible[k]);
 
+  const threshold = ds.meta.spec.largeWireThresholdMinor;
+  const presentCount = (k: keyof EdgeCases): number => {
+    switch (k) {
+      case "nsfOverdraft":
+        return ds.transactions.filter((t) => t.tags.includes("overdraft")).length;
+      case "largeWires":
+        return ds.transactions.filter((t) => t.category === "wire" && Math.abs(t.amountMinor) > threshold).length;
+      case "backdatedPostings":
+        return ds.transactions.filter((t) => t.tags.includes("backdated")).length;
+      case "dormantAccounts":
+        return ds.accounts.filter((a) => a.status === "dormant").length;
+      case "closedWithResidual":
+        return ds.accounts.filter((a) => a.status === "closed").length;
+      case "atLimitAccounts":
+        return ds.accounts.filter((a) => a.tags.includes("at_limit")).length;
+      case "newAccountFunding":
+        return ds.accounts.filter((a) => a.tags.includes("new_funding")).length;
+      case "jointOwnership":
+        return ds.accounts.filter((a) => a.owners.length > 1).length;
+    }
+  };
+  const presentLabel = (k: keyof EdgeCases): string =>
+    k === "largeWires"
+      ? `Large wires ≥ $${(threshold / 100).toLocaleString()} (${presentCount(k)})`
+      : `${EDGE_LABELS[k]} (${presentCount(k)})`;
+
   const edgeStatus: CheckStatus =
     missingFeasible.length > 0 ? "fail" : missingInfeasible.length > 0 ? "warn" : "pass";
 
@@ -237,7 +263,7 @@ export function validateDataset(ds: Dataset): ValidationResult {
   } else {
     const segments: string[] = [
       `${present.length}/${requested.length} requested edge case(s) verified present` +
-        (present.length ? `: ${present.map((k) => EDGE_LABELS[k]).join(", ")}.` : "."),
+        (present.length ? `: ${present.map(presentLabel).join(", ")}.` : "."),
     ];
     if (missingFeasible.length) {
       segments.push(`Missing (unexpected): ${missingFeasible.map((k) => EDGE_LABELS[k]).join(", ")}.`);

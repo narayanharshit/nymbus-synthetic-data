@@ -177,7 +177,11 @@ function buildProductAttrs(
 }
 
 function pickAccountCount(rng: Rng, avg: number): number {
-  return Math.min(5, Math.max(1, Math.round(rng.gaussian(avg, 0.9, 1, 5))));
+  // Expected value equals `avg` exactly, so the up-front estimate
+  // (partyCount × avg) matches the actual account count — one source of truth.
+  const base = Math.floor(avg);
+  const n = base + (rng.next() < avg - base ? 1 : 0);
+  return Math.min(5, Math.max(1, n));
 }
 
 /** Choose the product list for a party: a primary deposit first, then extras. */
