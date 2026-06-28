@@ -126,12 +126,75 @@ export function datasetJson(ds: Dataset): string {
   return JSON.stringify(ds, null, 2);
 }
 
-/** All export files for a dataset. */
+/** Human-readable data dictionary describing every exported column + enum. */
+export function dataDictionary(ds: Dataset): string {
+  return `# Data dictionary — ${ds.institution.name}
+
+Run ${ds.meta.runId} · seed ${ds.meta.seed} · generated ${ds.meta.generatedAt}
+Routing number (synthetic, ABA-checksum-valid): ${ds.institution.routingNumber}
+
+All data is SYNTHETIC and deliberately invalid — never real PII. In the CSV files
+monetary values are decimal dollars; in dataset.json they are integer minor units
+(cents), which is the exact, reconciling representation.
+
+## parties.csv
+| column | description |
+|---|---|
+| id | Party id (PTY-000001). Primary key. |
+| type | individual \\| business |
+| name | Display name (synthetic) |
+| dateOfBirth | ISO date (individuals only) |
+| taxId | Synthetic SSN (666 area) or EIN (00 prefix) — guaranteed invalid |
+| taxIdType | ssn \\| ein |
+| email, phone | Synthetic (example.com domain; 555-01xx range) |
+| addressLine1, city, state, zip | Synthetic US address |
+| memberSince | Relationship start (ISO date) |
+
+## accounts.csv
+| column | description |
+|---|---|
+| id | Account id (ACC-000001). Primary key. |
+| accountNumber | 10-digit synthetic number |
+| product | checking \\| savings \\| money_market \\| cd \\| loan_auto \\| loan_mortgage \\| loan_personal \\| credit_line |
+| productName | Marketing name; interest rate is a property of the named product |
+| status | active \\| dormant \\| closed \\| frozen |
+| primaryPartyId, jointPartyIds | Foreign keys to parties.id (jointPartyIds is ;-separated) |
+| openDate, closeDate | ISO dates |
+| openingBalance, currentBalance, availableBalance | Dollars. currentBalance = openingBalance + sum(transaction amounts). Loans/credit lines carry a negative balance (amount owed). |
+| interestRatePct, termMonths, minimumBalance, creditLimit, originalPrincipal, maturityDate | Product attributes (blank where not applicable) |
+| branch | Originating branch |
+| tags | Edge-case markers: new_funding, dormant, closed_residual, at_limit, joint |
+
+## transactions.csv
+| column | description |
+|---|---|
+| id | Transaction id (TXN-00000001) |
+| accountId | Foreign key to accounts.id |
+| partyId | Foreign key to parties.id |
+| type | ach_credit \\| ach_debit \\| wire_in \\| wire_out \\| card_pos \\| atm_withdrawal \\| atm_deposit \\| check_deposit \\| check_paid \\| transfer_in \\| transfer_out \\| fee \\| interest_credit \\| interest_charge \\| loan_disbursement \\| loan_payment \\| deposit \\| withdrawal |
+| category | ach \\| wire \\| card \\| atm \\| check \\| transfer \\| fee \\| interest \\| loan \\| deposit |
+| amount | Signed dollars (credit positive, debit negative) |
+| balanceAfter | Running account balance after this transaction |
+| effectiveDate, postingDate | ISO dates; postingDate >= effectiveDate (backdated/holiday edge cases widen the gap) |
+| description, merchant, mcc, counterpartyName, counterpartyAccount, channel, reference | Detail fields (blank where not applicable) |
+| status | posted \\| pending \\| returned |
+| tags | Edge-case markers: overdraft, nsf, nsf_fee, large_wire, backdated, holiday_posting, residual_after_close, credit_draw |
+
+## Integrity guarantees (validated before export)
+- Every account: ending balance equals opening balance plus the sum of its transactions.
+- Every foreign key (transaction→account, transaction→party, account→owner) resolves.
+- Dates are coherent and within the requested window.
+- Every requested edge case is present (counts shown in the app's validation panel).
+`;
+}
+
+/** All export files for a dataset, including the data dictionary. */
 export function allExportFiles(ds: Dataset): ExportFile[] {
   return [
     { name: "parties.csv", mime: "text/csv", content: partiesCsv(ds) },
     { name: "accounts.csv", mime: "text/csv", content: accountsCsv(ds) },
     { name: "transactions.csv", mime: "text/csv", content: transactionsCsv(ds) },
     { name: "dataset.json", mime: "application/json", content: datasetJson(ds) },
+    { name: "DATA_DICTIONARY.md", mime: "text/markdown", content: dataDictionary(ds) },
   ];
 }

@@ -28,6 +28,7 @@ export function DataGrid<T>({
   searchText,
   tagsOf,
   category,
+  amountFilter,
   toolbarRight,
   footerExtra,
 }: {
@@ -37,12 +38,16 @@ export function DataGrid<T>({
   searchText: (r: T) => string;
   tagsOf?: (r: T) => string[];
   category?: { label: string; options: string[]; of: (r: T) => string };
+  /** Enables a $min/$max range filter on |of(row)| (e.g. amount or balance). */
+  amountFilter?: { of: (r: T) => number };
   toolbarRight?: React.ReactNode;
   footerExtra?: React.ReactNode;
 }) {
   const [query, setQuery] = React.useState("");
   const [flaggedOnly, setFlaggedOnly] = React.useState(false);
   const [cat, setCat] = React.useState("all");
+  const [amtMin, setAmtMin] = React.useState("");
+  const [amtMax, setAmtMax] = React.useState("");
   const [sortKey, setSortKey] = React.useState<string | null>(null);
   const [sortDir, setSortDir] = React.useState<"asc" | "desc">("desc");
   const [hidden, setHidden] = React.useState<Record<string, boolean>>(() =>
@@ -58,6 +63,16 @@ export function DataGrid<T>({
     if (needle) r = r.filter((x) => searchText(x).toLowerCase().includes(needle));
     if (flaggedOnly && tagsOf) r = r.filter((x) => tagsOf(x).length > 0);
     if (category && cat !== "all") r = r.filter((x) => category.of(x) === cat);
+    if (amountFilter) {
+      const lo = amtMin.trim() ? Number(amtMin) * 100 : null;
+      const hi = amtMax.trim() ? Number(amtMax) * 100 : null;
+      if (lo !== null || hi !== null) {
+        r = r.filter((x) => {
+          const v = Math.abs(amountFilter.of(x));
+          return (lo === null || v >= lo) && (hi === null || v <= hi);
+        });
+      }
+    }
     if (sortKey) {
       const col = columns.find((c) => c.key === sortKey);
       if (col?.sortValue) {
@@ -72,7 +87,7 @@ export function DataGrid<T>({
       }
     }
     return r;
-  }, [rows, query, flaggedOnly, cat, sortKey, sortDir, columns, searchText, tagsOf, category]);
+  }, [rows, query, flaggedOnly, cat, amtMin, amtMax, sortKey, sortDir, columns, searchText, tagsOf, category, amountFilter]);
 
   const toggleSort = (key: string) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -121,6 +136,26 @@ export function DataGrid<T>({
             />
             Flagged only
           </label>
+        )}
+        {amountFilter && (
+          <div className="flex items-center gap-1 text-[12px] text-ink-faint">
+            <span>$</span>
+            <input
+              value={amtMin}
+              onChange={(e) => setAmtMin(e.target.value)}
+              placeholder="min"
+              inputMode="numeric"
+              className="tnum w-16 rounded-md border border-line bg-surface px-1.5 py-1 text-[12px] text-ink focus:border-accent focus:outline-none"
+            />
+            <span>–</span>
+            <input
+              value={amtMax}
+              onChange={(e) => setAmtMax(e.target.value)}
+              placeholder="max"
+              inputMode="numeric"
+              className="tnum w-16 rounded-md border border-line bg-surface px-1.5 py-1 text-[12px] text-ink focus:border-accent focus:outline-none"
+            />
+          </div>
         )}
 
         <div className="ml-auto flex items-center gap-2">

@@ -314,6 +314,7 @@ function AccountsGrid({ dataset }: { dataset: Dataset }) {
       searchText={(a) => `${a.id} ${a.productName} ${a.product} ${a.status} ${a.tags.join(" ")}`}
       tagsOf={(a) => a.tags}
       category={{ label: "Product", options: products, of: (a) => a.product }}
+      amountFilter={{ of: (a) => a.currentBalanceMinor }}
       toolbarRight={<ExportMenu dataset={dataset} />}
       footerExtra={<span className="font-mono tnum">{tallies}</span>}
     />
@@ -370,6 +371,7 @@ function TransactionsGrid({ dataset }: { dataset: Dataset }) {
         options: ["ach", "wire", "card", "atm", "check", "transfer", "fee", "interest", "loan", "deposit"],
         of: (t) => t.category,
       }}
+      amountFilter={{ of: (t) => t.amountMinor }}
       toolbarRight={<ExportMenu dataset={dataset} />}
     />
   );
