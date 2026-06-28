@@ -39,6 +39,7 @@ export function generateDataset(spec: GenerationSpec): Dataset {
 
   return {
     meta: {
+      runId: "RUN-" + Date.now().toString(36).toUpperCase().slice(-6),
       generatedAt: new Date().toISOString(),
       seed: spec.seed,
       counts: {

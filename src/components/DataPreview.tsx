@@ -1,10 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, Database, Download } from "lucide-react";
+import { Check, ChevronDown, Download } from "lucide-react";
 import type { Account, Dataset, Party, Transaction } from "@/lib/domain/types";
 import type { ValidationResult, CheckStatus } from "@/lib/validate/validate";
 import type { DatasetSummary } from "@/lib/summary";
+import type { GenerationSpec } from "@/lib/domain/spec";
+import type { Confidence, InterpretSource } from "@/lib/interpret/merge";
+import { RequestView } from "./RequestView";
 import { formatUSD } from "@/lib/domain/money";
 import { maskAccount } from "@/lib/generate/identity";
 import { partyDisplayName } from "@/lib/generate/parties";
@@ -43,11 +46,21 @@ function statusTone(status: string): React.ComponentProps<typeof Badge>["tone"] 
 }
 
 export function DataPreview({
+  spec,
+  notes,
+  source,
+  model,
+  confidence,
   dataset,
   validation,
   summary,
   generating,
 }: {
+  spec: GenerationSpec;
+  notes: string[];
+  source: InterpretSource | null;
+  model?: string;
+  confidence: Confidence;
   dataset: Dataset | null;
   validation: ValidationResult | null;
   summary: DatasetSummary | null;
@@ -55,20 +68,11 @@ export function DataPreview({
 }) {
   const [tab, setTab] = React.useState<Tab>("accounts");
 
+  // Before generation the right pane is never empty — it shows the structured
+  // request (the prompt's core deliverable), then becomes the dataset preview.
   if (!dataset || !validation || !summary) {
     return (
-      <div className="flex flex-1 items-center justify-center bg-surface">
-        <div className="max-w-sm text-center">
-          <Database className="mx-auto h-6 w-6 text-ink-faint" />
-          <p className="mt-3 text-[13px] font-medium text-ink">
-            {generating ? "Generating dataset…" : "No dataset yet"}
-          </p>
-          <p className="mt-1 text-[12px] text-ink-muted">
-            Configure the spec on the left and generate to preview a realistic, reconciling
-            dataset here.
-          </p>
-        </div>
-      </div>
+      <RequestView spec={spec} notes={notes} source={source} model={model} confidence={confidence} generating={generating} />
     );
   }
 
@@ -127,7 +131,10 @@ function MetricStrip({
       <Metric label="Transactions" value={summary.stats.transactions.toLocaleString()} />
       <Metric label="Deposits" value={compactUSD(summary.stats.totalDepositsMinor)} />
       <Metric label="Loans o/s" value={compactUSD(summary.stats.totalLoansOutstandingMinor)} />
-      <div className="ml-auto flex items-center px-3">
+      <div className="ml-auto flex items-center gap-3 px-3">
+        <span className="font-mono tnum text-[11px] text-ink-faint">
+          {dataset.meta.runId} · seed {dataset.meta.seed} · {dataset.meta.generatedAt.slice(0, 10)}
+        </span>
         <ReconChip validation={validation} />
       </div>
     </div>

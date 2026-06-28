@@ -203,6 +203,8 @@ export interface Institution {
 }
 
 export interface DatasetMeta {
+  /** Short reference id for this run (e.g. RUN-4Z9KQ1). Reproduce with seed + spec. */
+  runId: string;
   generatedAt: string; // ISO timestamp
   seed: number;
   counts: {
