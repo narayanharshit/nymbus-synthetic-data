@@ -141,7 +141,7 @@ export function heuristicInterpret(text: string): Patch {
 
   // Edge cases
   let edgeFound = false;
-  if (/overdraft|nsf|insufficient|bounced|returned item/.test(t)) { edgeCases.nsfOverdraft = true; edgeFound = true; }
+  if (/overdraft|\bnsf\b|insufficient|bounced|returned item/.test(t)) { edgeCases.nsfOverdraft = true; edgeFound = true; }
   if (/dormant|inactive|stale account/.test(t)) { edgeCases.dormantAccounts = true; edgeFound = true; }
   if (/at (the )?limit|maxed|over[- ]?limit|product limit|near maturity/.test(t)) { edgeCases.atLimitAccounts = true; edgeFound = true; }
   if (/backdated|holiday posting|weekend posting|posting delay/.test(t)) { edgeCases.backdatedPostings = true; edgeFound = true; }

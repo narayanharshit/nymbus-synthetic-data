@@ -3,7 +3,7 @@
 import * as React from "react";
 import { ChevronDown, ChevronRight, Search, SlidersHorizontal } from "lucide-react";
 import type { GenerationSpec } from "@/lib/domain/spec";
-import type { Confidence, InterpretSource } from "@/lib/interpret/merge";
+import type { Confidence, InterpretSource, Provenance, ProvenanceField } from "@/lib/interpret/merge";
 import { Button, Spinner, cn } from "./ui";
 import { RequestCard } from "./RequestCard";
 import { AdvancedPanel } from "./AdvancedPanel";
@@ -11,6 +11,8 @@ import { AdvancedPanel } from "./AdvancedPanel";
 export function StageReview({
   spec,
   onChange,
+  provenance,
+  onMarkStated,
   notes,
   source,
   model,
@@ -22,6 +24,8 @@ export function StageReview({
 }: {
   spec: GenerationSpec;
   onChange: (s: GenerationSpec) => void;
+  provenance: Provenance;
+  onMarkStated: (field: ProvenanceField) => void;
   notes: string[];
   source: InterpretSource | null;
   model?: string;
@@ -38,6 +42,9 @@ export function StageReview({
         <div className="mx-auto w-full max-w-[760px] px-5 py-8">
           <RequestCard
             spec={spec}
+            onChange={onChange}
+            provenance={provenance}
+            onMarkStated={onMarkStated}
             notes={notes}
             source={source}
             model={model}
@@ -59,7 +66,7 @@ export function StageReview({
               <SlidersHorizontal className="h-3.5 w-3.5 text-ink-muted" />
               Advanced — fine-tune
               <span className="ml-1 text-[12px] font-normal text-ink-faint">
-                products, volume, mix, edge cases
+                transaction mix, business &amp; joint ratios
               </span>
             </button>
             {advancedOpen && (

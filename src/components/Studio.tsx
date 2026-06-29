@@ -4,7 +4,14 @@ import * as React from "react";
 import { Info, RotateCcw, Sparkles } from "lucide-react";
 import { PRESETS } from "@/lib/domain/presets";
 import { normalizeSpec, type GenerationSpec } from "@/lib/domain/spec";
-import type { Confidence, DeepPartial, InterpretSource } from "@/lib/interpret/merge";
+import {
+  defaultProvenance,
+  type Confidence,
+  type DeepPartial,
+  type InterpretSource,
+  type Provenance,
+  type ProvenanceField,
+} from "@/lib/interpret/merge";
 import { buildShareUrl, readSharedFromLocation, type SharedRequest } from "@/lib/share";
 import { generateDataset } from "@/lib/generate/generator";
 import { validateDataset, type ValidationResult } from "@/lib/validate/validate";
@@ -42,6 +49,7 @@ interface Setters {
   setSource: (s: InterpretSource | null) => void;
   setConfidence: (c: Confidence) => void;
   setModel: (m: string | undefined) => void;
+  setProvenance: (p: Provenance) => void;
 }
 
 /** Load a request shared via URL onto the Review stage, then strip the (long) blob. */
@@ -52,6 +60,7 @@ function applyShared(s: SharedRequest, set: Setters) {
   set.setSource(s.source);
   set.setConfidence(s.confidence);
   set.setModel(s.model);
+  if (s.provenance) set.setProvenance(s.provenance);
   history.replaceState(null, "", location.pathname + "#review");
 }
 
@@ -60,6 +69,7 @@ interface InterpretResponse {
   notes: string[];
   source: InterpretSource;
   confidence: Confidence;
+  provenance: Provenance;
   llmAvailable: boolean;
   fallback?: boolean;
   model?: string;
@@ -77,6 +87,7 @@ export function Studio() {
   const [confidence, setConfidence] = React.useState<Confidence>("high");
   const [source, setSource] = React.useState<InterpretSource | null>(null);
   const [model, setModel] = React.useState<string | undefined>();
+  const [provenance, setProvenance] = React.useState<Provenance>(defaultProvenance);
   const [llmAvailable, setLlmAvailable] = React.useState<boolean | null>(null);
 
   const [dataset, setDataset] = React.useState<Dataset | null>(null);
@@ -92,7 +103,7 @@ export function Studio() {
   React.useEffect(() => {
     const shared = readSharedFromLocation();
     if (shared) {
-      applyShared(shared, { setText, setSpec, setNotes, setSource, setConfidence, setModel });
+      applyShared(shared, { setText, setSpec, setNotes, setSource, setConfidence, setModel, setProvenance });
     } else {
       restoreDraft(setText, setSpec);
       if (location.hash) history.replaceState(null, "", location.pathname + location.search);
@@ -148,6 +159,7 @@ export function Studio() {
       setSource(data.fallback ? "heuristic" : data.source);
       setConfidence(data.confidence ?? "high");
       setModel(data.model);
+      setProvenance(data.provenance ?? defaultProvenance());
       setLlmAvailable(data.llmAvailable);
       go("review");
     } catch (e) {
@@ -188,15 +200,21 @@ export function Studio() {
     setNotes([]);
     setSource(null);
     setConfidence("high");
+    setProvenance(defaultProvenance());
     setDataset(null);
     setValidation(null);
     setSummary(null);
     go("describe");
   }
 
+  // The user edited a field directly, so it's now confirmed by them: mark it stated.
+  const markStated = React.useCallback((field: ProvenanceField) => {
+    setProvenance((p) => (p[field]?.status === "stated" ? p : { ...p, [field]: { status: "stated" } }));
+  }, []);
+
   const getShareUrl = React.useCallback(
-    () => buildShareUrl({ text, spec, notes, source, confidence, model }),
-    [text, spec, notes, source, confidence, model],
+    () => buildShareUrl({ text, spec, notes, source, confidence, model, provenance }),
+    [text, spec, notes, source, confidence, model, provenance],
   );
 
   // Guard against a stage being active without the data it needs (e.g. pressing
@@ -250,6 +268,8 @@ export function Studio() {
           <StageReview
             spec={spec}
             onChange={setSpec}
+            provenance={provenance}
+            onMarkStated={markStated}
             notes={notes}
             source={source}
             model={model}

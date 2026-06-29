@@ -6,7 +6,7 @@
  */
 
 import { normalizeSpec, type GenerationSpec } from "@/lib/domain/spec";
-import type { Confidence, InterpretSource } from "@/lib/interpret/merge";
+import type { Confidence, InterpretSource, Provenance } from "@/lib/interpret/merge";
 
 export interface SharedRequest {
   text: string;
@@ -15,6 +15,7 @@ export interface SharedRequest {
   source: InterpretSource | null;
   confidence: Confidence;
   model?: string;
+  provenance?: Provenance;
 }
 
 const PARAM = "r";
@@ -49,6 +50,7 @@ export function decodeShared(raw: string): SharedRequest | null {
       source: obj.source === "llm" || obj.source === "heuristic" ? obj.source : null,
       confidence: obj.confidence === "low" || obj.confidence === "medium" ? obj.confidence : "high",
       model: typeof obj.model === "string" ? obj.model : undefined,
+      provenance: obj.provenance && typeof obj.provenance === "object" ? (obj.provenance as Provenance) : undefined,
     };
   } catch {
     return null;
