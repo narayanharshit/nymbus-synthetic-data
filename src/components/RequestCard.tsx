@@ -195,7 +195,7 @@ export function RequestCard({
           </div>
         )}
 
-        <dl className="grid grid-cols-[150px_1fr] items-baseline gap-y-0.5 text-[13px]">
+        <dl className="grid grid-cols-[150px_1fr] text-[13px]">
           <Row label="Institution" prov={provenance.institutionType}>
             <select
               value={spec.institutionType}
@@ -360,7 +360,7 @@ export function RequestCard({
 function Row({ label, prov, children }: { label: string; prov?: FieldProvenance; children: React.ReactNode }) {
   return (
     <>
-      <dt className="self-center border-t border-line py-2 text-ink-faint">{label}</dt>
+      <dt className="flex items-center border-t border-line py-2 text-ink-faint">{label}</dt>
       <dd className="flex flex-wrap items-center gap-2 border-t border-line py-2 text-ink">
         {children}
         <ProvTag prov={prov} />
