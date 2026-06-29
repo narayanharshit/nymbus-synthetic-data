@@ -64,5 +64,12 @@ export function finalizeInterpretation(
 ): InterpretResult {
   const merged = deepMergeSpec(base, patch);
   const { spec, notes } = normalizeSpec(merged);
-  return { spec, notes: [...extraNotes, ...notes], source, confidence };
+  const all = [...extraNotes, ...notes].map(tidyNote).filter(Boolean);
+  return { spec, notes: all, source, confidence };
+}
+
+/** One clean sentence per note: no ".;" joins, exactly one trailing period. */
+function tidyNote(s: string): string {
+  const t = s.trim().replace(/\.\s*;\s*/g, "; ").replace(/[.;\s]+$/, "");
+  return t ? t + "." : "";
 }

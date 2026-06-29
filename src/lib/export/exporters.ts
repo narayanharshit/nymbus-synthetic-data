@@ -7,8 +7,9 @@
  *    as decimal dollars, ready to open in Excel or load into a test harness.
  */
 
-import type { Dataset } from "../domain/types";
+import type { Account, Dataset, Transaction } from "../domain/types";
 import { partyDisplayName } from "../generate/parties";
+import { validateDataset, type CheckStatus, type ValidationResult } from "../validate/validate";
 
 export interface ExportFile {
   name: string;
@@ -188,13 +189,100 @@ monetary values are decimal dollars; in dataset.json they are integer minor unit
 `;
 }
 
-/** All export files for a dataset, including the data dictionary. */
-export function allExportFiles(ds: Dataset): ExportFile[] {
+const STATUS_ICON: Record<CheckStatus, string> = { pass: "✓", warn: "!", fail: "✗" };
+
+/** Human-readable money for the markdown report (CSVs stay comma-free via dollars()). */
+function money(minor: number): string {
+  const s = (Math.abs(minor) / 100).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${minor < 0 ? "-" : ""}$${s}`;
+}
+
+function mdTable(headers: string[], rows: string[][]): string {
+  const cell = (v: string) => v.replace(/\|/g, "/").replace(/\n/g, " ");
+  const head = `| ${headers.join(" | ")} |`;
+  const sep = `| ${headers.map(() => "---").join(" | ")} |`;
+  const body = rows.map((r) => `| ${r.map(cell).join(" | ")} |`).join("\n");
+  return [head, sep, body].join("\n");
+}
+
+/**
+ * Human-readable validation report: the same deterministic checks the app runs
+ * before showing any data, plus a sample of the actual rows behind each edge-case
+ * claim so a reviewer can falsify them by hand against the CSVs.
+ */
+export function validationReport(ds: Dataset, validation: ValidationResult): string {
+  const m = ds.meta;
+  const date = m.generatedAt.slice(0, 10);
+  const out: string[] = [];
+
+  out.push(`# Validation report — ${m.runId}`, "");
+  out.push(`Generated ${date} · seed ${m.seed} · overall ${validation.ok ? "PASS" : "FAIL"}`, "");
+  out.push(
+    "Produced by the same validator the app runs before showing any data. Generation is",
+    "deterministic: the same request and seed reproduce this dataset and this report.",
+    "",
+  );
+
+  out.push("## Integrity checks", "");
+  out.push(`- Accounts reconciled: ${validation.stats.accountsReconciled} / ${ds.accounts.length}`);
+  out.push(`- Foreign keys checked: ${validation.stats.foreignKeysChecked.toLocaleString()}`);
+  out.push(`- Transactions checked: ${validation.stats.transactionsChecked.toLocaleString()}`, "");
+  for (const c of validation.checks) {
+    const count = c.count != null ? ` (${c.count})` : "";
+    out.push(`### ${STATUS_ICON[c.status]} ${c.label}${count}`, c.detail, "");
+  }
+
+  out.push("## Sampled proof rows", "");
+  out.push("A sample of the actual rows behind the edge-case claims above.", "");
+
+  const txnSample = (title: string, pred: (t: Transaction) => boolean, n = 5) => {
+    const hits = ds.transactions.filter(pred);
+    if (!hits.length) return;
+    out.push(`### ${title} — ${hits.length} total, showing ${Math.min(n, hits.length)}`, "");
+    out.push(
+      mdTable(
+        ["id", "posted", "type", "amount", "description"],
+        hits.slice(0, n).map((t) => [t.id, t.postingDate, t.type, money(t.amountMinor), t.description ?? ""]),
+      ),
+      "",
+    );
+  };
+  const acctSample = (title: string, pred: (a: Account) => boolean, n = 5) => {
+    const hits = ds.accounts.filter(pred);
+    if (!hits.length) return;
+    out.push(`### ${title} — ${hits.length} total, showing ${Math.min(n, hits.length)}`, "");
+    out.push(
+      mdTable(
+        ["id", "status", "product", "balance"],
+        hits.slice(0, n).map((a) => [a.id, a.status, a.productName, money(a.currentBalanceMinor)]),
+      ),
+      "",
+    );
+  };
+
+  txnSample("Large wires above threshold", (t) => t.tags.includes("large_wire"));
+  txnSample("NSF / overdraft events", (t) => t.tags.includes("nsf") || t.tags.includes("overdraft"));
+  txnSample("Backdated postings", (t) => t.tags.includes("backdated"));
+  acctSample("New-account funding", (a) => a.tags.includes("new_funding"));
+  acctSample("Dormant accounts", (a) => a.status === "dormant");
+  acctSample("Accounts at product limit", (a) => a.tags.includes("at_limit"));
+  acctSample("Closed accounts with residual activity", (a) => a.tags.includes("residual_after_close"));
+
+  return out.join("\n");
+}
+
+/** All export files for a dataset: tables, canonical JSON, data dictionary, and
+ *  a validation report. Validation is recomputed if not supplied. */
+export function allExportFiles(ds: Dataset, validation: ValidationResult = validateDataset(ds)): ExportFile[] {
   return [
     { name: "parties.csv", mime: "text/csv", content: partiesCsv(ds) },
     { name: "accounts.csv", mime: "text/csv", content: accountsCsv(ds) },
     { name: "transactions.csv", mime: "text/csv", content: transactionsCsv(ds) },
     { name: "dataset.json", mime: "application/json", content: datasetJson(ds) },
     { name: "DATA_DICTIONARY.md", mime: "text/markdown", content: dataDictionary(ds) },
+    { name: "validation_report.md", mime: "text/markdown", content: validationReport(ds, validation) },
   ];
 }

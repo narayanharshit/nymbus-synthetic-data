@@ -1,13 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, Download } from "lucide-react";
+import { Check, ChevronDown, Download, Pencil } from "lucide-react";
 import type { Account, Dataset, Party, Transaction } from "@/lib/domain/types";
 import type { ValidationResult, CheckStatus } from "@/lib/validate/validate";
 import type { DatasetSummary } from "@/lib/summary";
 import type { GenerationSpec } from "@/lib/domain/spec";
-import type { Confidence, InterpretSource } from "@/lib/interpret/merge";
-import { RequestView } from "./RequestView";
 import { formatUSD } from "@/lib/domain/money";
 import { maskAccount } from "@/lib/generate/identity";
 import { partyDisplayName } from "@/lib/generate/parties";
@@ -47,37 +45,22 @@ function statusTone(status: string): React.ComponentProps<typeof Badge>["tone"] 
 
 export function DataPreview({
   spec,
-  notes,
-  source,
-  model,
-  confidence,
   dataset,
   validation,
   summary,
-  generating,
+  onEditRequest,
 }: {
   spec: GenerationSpec;
-  notes: string[];
-  source: InterpretSource | null;
-  model?: string;
-  confidence: Confidence;
-  dataset: Dataset | null;
-  validation: ValidationResult | null;
-  summary: DatasetSummary | null;
-  generating: boolean;
+  dataset: Dataset;
+  validation: ValidationResult;
+  summary: DatasetSummary;
+  onEditRequest: () => void;
 }) {
   const [tab, setTab] = React.useState<Tab>("accounts");
 
-  // Before generation the right pane is never empty — it shows the structured
-  // request (the prompt's core deliverable), then becomes the dataset preview.
-  if (!dataset || !validation || !summary) {
-    return (
-      <RequestView spec={spec} notes={notes} source={source} model={model} confidence={confidence} generating={generating} />
-    );
-  }
-
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
+      <SpecSummaryStrip spec={spec} onEditRequest={onEditRequest} />
       <MetricStrip dataset={dataset} validation={validation} summary={summary} />
 
       <div className="flex items-center gap-4 border-b border-line px-3">
@@ -105,14 +88,35 @@ export function DataPreview({
         ))}
       </div>
 
-      {tab === "accounts" && <AccountsGrid dataset={dataset} />}
-      {tab === "transactions" && <TransactionsGrid dataset={dataset} />}
-      {tab === "parties" && <PartiesGrid dataset={dataset} />}
+      {tab === "accounts" && <AccountsGrid dataset={dataset} validation={validation} />}
+      {tab === "transactions" && <TransactionsGrid dataset={dataset} validation={validation} />}
+      {tab === "parties" && <PartiesGrid dataset={dataset} validation={validation} />}
     </div>
   );
 }
 
-/* ----------------------------- metric strip ----------------------------- */
+/* ----------------------------- spec summary + metrics ----------------------------- */
+
+function SpecSummaryStrip({ spec, onEditRequest }: { spec: GenerationSpec; onEditRequest: () => void }) {
+  const days = Math.round(
+    (new Date(spec.dateRange.end).getTime() - new Date(spec.dateRange.start).getTime()) / 86_400_000,
+  );
+  const inst = spec.institutionType === "credit_union" ? "Credit union" : "Community bank";
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-line bg-paper px-3 py-1.5 text-[12px] text-ink-muted">
+      <span className="truncate">
+        {inst} · {spec.products.length} products · {days}-day window · {spec.partyCount.toLocaleString()}{" "}
+        {spec.institutionType === "credit_union" ? "members" : "customers"} · seed {spec.seed}
+      </span>
+      <button
+        onClick={onEditRequest}
+        className="flex flex-none items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-[12px] text-ink hover:bg-sunken"
+      >
+        <Pencil className="h-3.5 w-3.5 text-ink-muted" /> Edit request
+      </button>
+    </div>
+  );
+}
 
 function MetricStrip({
   dataset,
@@ -209,9 +213,12 @@ function StatusGlyph({ status }: { status: CheckStatus }) {
 
 /* ----------------------------- export menu ----------------------------- */
 
-function ExportMenu({ dataset }: { dataset: Dataset }) {
+function ExportMenu({ dataset, validation }: { dataset: Dataset; validation: ValidationResult }) {
   const [open, setOpen] = React.useState(false);
-  const files = React.useMemo(() => allExportFiles(dataset), [dataset]);
+  const files = React.useMemo(() => allExportFiles(dataset, validation), [dataset, validation]);
+  // Every file is stamped with the run id + date so a downloaded bundle is traceable.
+  const prefix = `${dataset.meta.runId}_${dataset.meta.generatedAt.slice(0, 10)}_`;
+  const save = (f: ExportFile) => download({ ...f, name: prefix + f.name });
   return (
     <div className="relative">
       <button
@@ -223,12 +230,13 @@ function ExportMenu({ dataset }: { dataset: Dataset }) {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-1 w-52 rounded-md border border-line bg-surface p-1 shadow-md">
+          <div className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-line bg-surface p-1 shadow-md">
+            <div className="px-2 pb-1 pt-1 font-mono text-[10px] text-ink-faint">{prefix}…</div>
             {files.map((f) => (
               <button
                 key={f.name}
                 onClick={() => {
-                  download(f);
+                  save(f);
                   setOpen(false);
                 }}
                 className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[12px] text-ink hover:bg-sunken"
@@ -239,7 +247,7 @@ function ExportMenu({ dataset }: { dataset: Dataset }) {
             ))}
             <button
               onClick={() => {
-                files.forEach(download);
+                files.forEach(save);
                 setOpen(false);
               }}
               className="mt-1 w-full rounded border border-accent/30 bg-accent-weak px-2 py-1.5 text-[12px] font-medium text-accent"
@@ -277,7 +285,7 @@ function Flags({ tags }: { tags: string[] }) {
   );
 }
 
-function AccountsGrid({ dataset }: { dataset: Dataset }) {
+function AccountsGrid({ dataset, validation }: { dataset: Dataset; validation: ValidationResult }) {
   const products = [...new Set(dataset.accounts.map((a) => a.product))];
   const columns: GridColumn<Account>[] = [
     { key: "id", header: "ID", sortValue: (a) => a.id, render: (a) => <span className={mono}>{a.id}</span> },
@@ -315,7 +323,7 @@ function AccountsGrid({ dataset }: { dataset: Dataset }) {
       tagsOf={(a) => a.tags}
       category={{ label: "Product", options: products, of: (a) => a.product }}
       amountFilter={{ of: (a) => a.currentBalanceMinor }}
-      toolbarRight={<ExportMenu dataset={dataset} />}
+      toolbarRight={<ExportMenu dataset={dataset} validation={validation} />}
       footerExtra={<span className="font-mono tnum">{tallies}</span>}
     />
   );
@@ -332,7 +340,7 @@ function edgeTallies(rows: { neg: boolean; status: string }[]): string {
   return parts.join(" · ");
 }
 
-function TransactionsGrid({ dataset }: { dataset: Dataset }) {
+function TransactionsGrid({ dataset, validation }: { dataset: Dataset; validation: ValidationResult }) {
   const columns: GridColumn<Transaction>[] = [
     { key: "id", header: "ID", sortValue: (t) => t.id, render: (t) => <span className={mono}>{t.id}</span> },
     { key: "account", header: "Account", sortValue: (t) => t.accountId, render: (t) => <span className={mono}>{t.accountId}</span> },
@@ -372,12 +380,12 @@ function TransactionsGrid({ dataset }: { dataset: Dataset }) {
         of: (t) => t.category,
       }}
       amountFilter={{ of: (t) => t.amountMinor }}
-      toolbarRight={<ExportMenu dataset={dataset} />}
+      toolbarRight={<ExportMenu dataset={dataset} validation={validation} />}
     />
   );
 }
 
-function PartiesGrid({ dataset }: { dataset: Dataset }) {
+function PartiesGrid({ dataset, validation }: { dataset: Dataset; validation: ValidationResult }) {
   const columns: GridColumn<Party>[] = [
     { key: "id", header: "ID", sortValue: (p) => p.id, render: (p) => <span className={mono}>{p.id}</span> },
     { key: "type", header: "Type", sortValue: (p) => p.type, render: (p) => <Badge tone={p.type === "business" ? "blue" : "slate"}>{p.type}</Badge> },
@@ -394,7 +402,7 @@ function PartiesGrid({ dataset }: { dataset: Dataset }) {
       columns={columns}
       searchText={(p) => `${p.id} ${partyDisplayName(p)} ${p.type} ${p.address.city} ${p.address.state} ${p.taxId}`}
       category={{ label: "Type", options: ["individual", "business"], of: (p) => p.type }}
-      toolbarRight={<ExportMenu dataset={dataset} />}
+      toolbarRight={<ExportMenu dataset={dataset} validation={validation} />}
     />
   );
 }

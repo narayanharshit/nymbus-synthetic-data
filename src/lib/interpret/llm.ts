@@ -193,7 +193,8 @@ export async function llmInterpret(
   }
   if (o.assumptions) notes.push(...o.assumptions);
   if (o.notUnderstood && o.notUnderstood.length) {
-    notes.push("Couldn't determine from your description: " + o.notUnderstood.join("; ") + ".");
+    const items = o.notUnderstood.map((s) => s.trim().replace(/[.;]+$/, "")).filter(Boolean);
+    if (items.length) notes.push("Couldn't determine from your description: " + items.join(", ") + ".");
   }
 
   return { patch, notes, model, confidence: o.confidence ?? "high" };

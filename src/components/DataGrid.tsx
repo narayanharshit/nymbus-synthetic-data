@@ -100,7 +100,7 @@ export function DataGrid<T>({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
-        <div className="flex items-center gap-1.5 rounded-md border border-line bg-surface px-2">
+        <div className="flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 focus-within:border-accent">
           <Search className="h-3.5 w-3.5 text-ink-faint" />
           <input
             value={query}
@@ -201,9 +201,9 @@ export function DataGrid<T>({
                   key={c.key}
                   onClick={() => c.sortValue && toggleSort(c.key)}
                   className={cn(
-                    "sticky top-0 z-10 whitespace-nowrap border-b border-line bg-sunken px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-faint",
+                    "sticky top-0 z-10 whitespace-nowrap border-b border-line bg-sunken px-3 py-1.5 text-left text-[11px] font-medium text-ink-muted",
                     c.align === "right" && "text-right",
-                    c.sortValue && "cursor-pointer select-none hover:text-ink-muted",
+                    c.sortValue && "cursor-pointer select-none hover:text-ink",
                   )}
                 >
                   {c.header}

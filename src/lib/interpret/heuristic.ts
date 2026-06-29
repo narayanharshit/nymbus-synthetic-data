@@ -56,10 +56,25 @@ export function heuristicInterpret(text: string): Patch {
     }
   }
 
-  // Business orientation (and an institution-aware default when unstated)
+  // Business orientation (and an institution-aware default when unstated).
+  // Intensifiers like "mostly" only imply a business majority when they sit next
+  // to "business/commercial" — "mostly retail" must not read as business-heavy,
+  // and "a few business accounts" should read as a minority.
   const businessMentioned = /business|commercial|operating account|companies|\bllc\b/.test(t);
-  if (businessMentioned) {
-    patch.businessRatio = /mostly|primarily|majority|focus(ed)? on (business|commercial)/.test(t) ? 0.6 : 0.3;
+  const businessMajority =
+    /\b(mostly|primarily|mainly|chiefly|majority|heavy on)\b[^.]{0,40}\b(business|commercial)\b/.test(t) ||
+    /\b(business|commercial)\b[^.]{0,25}\b(focused|focus|heavy|majority|primary|driven)\b/.test(t) ||
+    /focus(ed)? on (business|commercial)/.test(t);
+  const businessMinor =
+    /\b(a few|some|handful|couple|few|small number of)\b[^.]{0,30}\b(business|commercial|operating)\b/.test(t);
+  if (businessMajority) {
+    patch.businessRatio = 0.6;
+    signals++;
+  } else if (businessMinor) {
+    patch.businessRatio = 0.2;
+    signals++;
+  } else if (businessMentioned) {
+    patch.businessRatio = 0.3;
     signals++;
   } else if (patch.institutionType) {
     // Credit unions are member/consumer-heavy; community banks carry a few more businesses.
@@ -69,8 +84,25 @@ export function heuristicInterpret(text: string): Patch {
   // Products
   const products: ProductType[] = [];
   for (const [re, p] of PRODUCT_KEYWORDS) if (re.test(t)) products.push(p);
+
+  // Loan types are often listed with a shared noun ("auto and personal loans"),
+  // which the strict "<type> loan" patterns above miss. When the text is clearly
+  // about lending, infer the types from nearby keywords.
+  if (/\bloans?\b|\blending\b|\bfinanc(e|ing)\b|\bborrow/.test(t)) {
+    if (/\bauto\b|\bcar\b|\bvehicle\b/.test(t)) products.push("loan_auto");
+    if (/\bpersonal\b|\bsignature\b/.test(t)) products.push("loan_personal");
+    if (/\bmortgage|home\s*loan/.test(t)) products.push("loan_mortgage");
+  }
+  // A bare "loans" with no type named: assume the two most common consumer loans.
   if (/\bloans?\b/.test(t) && !products.some((p) => p.startsWith("loan"))) {
     products.push("loan_auto", "loan_personal");
+  }
+  // Every retail institution offers somewhere to deposit; if only lending was
+  // named, add the standard deposit pair so the dataset isn't loan-only.
+  const deposits: ProductType[] = ["checking", "savings", "money_market", "cd"];
+  if (products.length && !products.some((p) => deposits.includes(p))) {
+    products.unshift("checking", "savings");
+    notes.push("Added checking and savings as standard deposit products since only lending was mentioned.");
   }
   if (products.length) {
     patch.products = Array.from(new Set(products));
