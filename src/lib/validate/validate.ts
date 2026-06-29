@@ -10,8 +10,67 @@
  * in this path, so "the data is valid" is a guarantee, not a hope.
  */
 
-import type { Dataset } from "../domain/types";
+import type { Account, Dataset, Transaction } from "../domain/types";
 import type { EdgeCases } from "../domain/spec";
+
+/**
+ * Single source of truth for "which rows exercise each edge case". Both the
+ * validator's counts and the Stage 3 Test scenarios panel use these predicates,
+ * so the numbers can never disagree. Large wires match either direction.
+ */
+export const EDGE_TXN_MATCH: Partial<Record<keyof EdgeCases, (t: Transaction, thresholdMinor: number) => boolean>> = {
+  largeWires: (t, thr) => t.category === "wire" && Math.abs(t.amountMinor) > thr,
+  nsfOverdraft: (t) => t.tags.includes("overdraft"),
+  backdatedPostings: (t) => t.tags.includes("backdated"),
+};
+
+export const EDGE_ACCT_MATCH: Partial<Record<keyof EdgeCases, (a: Account) => boolean>> = {
+  dormantAccounts: (a) => a.status === "dormant",
+  closedWithResidual: (a) => a.status === "closed",
+  atLimitAccounts: (a) => a.tags.includes("at_limit"),
+  newAccountFunding: (a) => a.tags.includes("new_funding"),
+  jointOwnership: (a) => a.owners.length > 1,
+};
+
+const WHAT_TO_TEST: Record<keyof EdgeCases, string> = {
+  largeWires: "AML / large-wire alerting and reporting (both directions).",
+  nsfOverdraft: "Overdraft and NSF fee handling.",
+  backdatedPostings: "Backdated / holiday posting logic.",
+  dormantAccounts: "Dormancy detection and reactivation.",
+  closedWithResidual: "Residual activity on closed accounts.",
+  atLimitAccounts: "At-limit / over-limit handling.",
+  newAccountFunding: "New-account funding and onboarding flows.",
+  jointOwnership: "Joint ownership / multi-owner handling.",
+};
+
+export interface EdgeScenario {
+  key: keyof EdgeCases;
+  label: string;
+  count: number;
+  domain: "transactions" | "accounts";
+  whatToTest: string;
+}
+
+/** Requested edge cases that are actually present, with counts + a what-to-test line. */
+export function edgeScenarios(ds: Dataset): EdgeScenario[] {
+  const ec = ds.meta.spec.edgeCases;
+  const thr = ds.meta.spec.largeWireThresholdMinor;
+  const labelFor = (k: keyof EdgeCases): string =>
+    k === "largeWires" ? `Large wires ≥ $${(thr / 100).toLocaleString()}` : EDGE_LABELS[k];
+
+  const out: EdgeScenario[] = [];
+  for (const [k, match] of Object.entries(EDGE_TXN_MATCH) as [keyof EdgeCases, (t: Transaction, thr: number) => boolean][]) {
+    if (!ec[k]) continue;
+    const count = ds.transactions.filter((t) => match(t, thr)).length;
+    if (count > 0) out.push({ key: k, label: labelFor(k), count, domain: "transactions", whatToTest: WHAT_TO_TEST[k] });
+  }
+  for (const [k, match] of Object.entries(EDGE_ACCT_MATCH) as [keyof EdgeCases, (a: Account) => boolean][]) {
+    if (!ec[k]) continue;
+    const count = ds.accounts.filter(match).length;
+    if (count > 0) out.push({ key: k, label: labelFor(k), count, domain: "accounts", whatToTest: WHAT_TO_TEST[k] });
+  }
+  return out;
+}
 
 export type CheckStatus = "pass" | "fail" | "warn";
 
@@ -230,24 +289,10 @@ export function validateDataset(ds: Dataset): ValidationResult {
 
   const threshold = ds.meta.spec.largeWireThresholdMinor;
   const presentCount = (k: keyof EdgeCases): number => {
-    switch (k) {
-      case "nsfOverdraft":
-        return ds.transactions.filter((t) => t.tags.includes("overdraft")).length;
-      case "largeWires":
-        return ds.transactions.filter((t) => t.category === "wire" && Math.abs(t.amountMinor) > threshold).length;
-      case "backdatedPostings":
-        return ds.transactions.filter((t) => t.tags.includes("backdated")).length;
-      case "dormantAccounts":
-        return ds.accounts.filter((a) => a.status === "dormant").length;
-      case "closedWithResidual":
-        return ds.accounts.filter((a) => a.status === "closed").length;
-      case "atLimitAccounts":
-        return ds.accounts.filter((a) => a.tags.includes("at_limit")).length;
-      case "newAccountFunding":
-        return ds.accounts.filter((a) => a.tags.includes("new_funding")).length;
-      case "jointOwnership":
-        return ds.accounts.filter((a) => a.owners.length > 1).length;
-    }
+    const tm = EDGE_TXN_MATCH[k];
+    if (tm) return ds.transactions.filter((t) => tm(t, threshold)).length;
+    const am = EDGE_ACCT_MATCH[k];
+    return am ? ds.accounts.filter(am).length : 0;
   };
   const presentLabel = (k: keyof EdgeCases): string =>
     k === "largeWires"

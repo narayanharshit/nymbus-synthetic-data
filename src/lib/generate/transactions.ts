@@ -45,6 +45,7 @@ interface Ctx {
   guarantee: {
     nsf: Set<string>;
     largeWire: Set<string>;
+    largeWireOut: Set<string>;
   };
 }
 
@@ -324,6 +325,20 @@ function generateForDeposit(ctx: Ctx, account: Account, partyId: string, out: Tr
     events.push({ eff: randomDateISO(rng, start, end), type: "wire_in", signed: amt, tags: ["large_wire"], backdate: false });
   }
 
+  // 4b) Guaranteed large OUTGOING wire (the AML/BSA-relevant direction). Fund the
+  //     account first with a large credit so the outbound wire doesn't overdraw
+  //     it — a realistic "money in, then wired out" layering pattern. The wire is
+  //     tagged large_wire so the overdraft floor never shrinks it below threshold.
+  if (ctx.guarantee.largeWireOut.has(account.id)) {
+    const amt = spec.largeWireThresholdMinor + rng.amountMinor(2000, 60000);
+    const d1 = randomDateISO(rng, start, end);
+    const d2 = randomDateISO(rng, start, end);
+    const fundEff = d1 <= d2 ? d1 : d2;
+    const wireEff = d1 <= d2 ? d2 : d1;
+    events.push({ eff: fundEff, type: "ach_credit", signed: amt + rng.amountMinor(20000, 50000), tags: [], backdate: false });
+    events.push({ eff: wireEff, type: "wire_out", signed: -amt, tags: ["large_wire"], backdate: false });
+  }
+
   // Sort by effective date for a coherent running balance.
   events.sort((a, b) => (a.eff < b.eff ? -1 : a.eff > b.eff ? 1 : 0));
 
@@ -469,6 +484,9 @@ function pickGuaranteeTargets(rng: Rng, spec: GenerationSpec, accounts: Account[
   return {
     nsf: want(spec.edgeCases.nsfOverdraft, 4, checking.length ? checking : activeDeposits),
     largeWire: want(spec.edgeCases.largeWires, 4, activeDeposits),
+    // Outgoing large wires (structuring/layering risk is outbound) — a separate
+    // set so both directions appear and the validator counts each.
+    largeWireOut: want(spec.edgeCases.largeWires, 3, activeDeposits),
   };
 }
 

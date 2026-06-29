@@ -219,7 +219,11 @@ const ESTIMATE_WEIGHTS: Record<string, number> = {
  */
 export function estimateTransactionCount(spec: GenerationSpec): number {
   const totalAccounts = spec.partyCount * spec.avgAccountsPerParty;
-  const months = monthsBetween(spec.dateRange.start, spec.dateRange.end) + 1;
+  // Fractional months from the actual day span (calibrated against real output —
+  // the old "whole months + 1" over-counted short windows by ~15%).
+  const days =
+    (new Date(spec.dateRange.end).getTime() - new Date(spec.dateRange.start).getTime()) / 86_400_000;
+  const months = Math.max(0.5, days / 30.44);
 
   const hasDeposit = spec.products.some((p) => !LOAN_PRODUCT_SET.has(p));
   let wLoan = 0;
@@ -236,8 +240,11 @@ export function estimateTransactionCount(spec: GenerationSpec): number {
   const loanAccts = totalAccounts * loanFrac;
   // Dormant accounts generate almost nothing; closed accounts stop partway.
   const activeFrac =
-    1 - (spec.edgeCases.dormantAccounts ? 0.12 : 0) - (spec.edgeCases.closedWithResidual ? 0.07 : 0);
-  const depositTxns = depositAccts * months * (spec.avgTransactionsPerAccountPerMonth + 1.2) * activeFrac;
-  const loanTxns = loanAccts * months * 2;
+    1 - (spec.edgeCases.dormantAccounts ? 0.07 : 0) - (spec.edgeCases.closedWithResidual ? 0.05 : 0);
+  // Deposit accounts: ~avgTxns/month (plus light interest) PLUS a window-independent
+  // floor (~7) for one-time funding and the minimum activity every account gets.
+  // Loans / credit lines run ~1.5 events/month (interest + payment/draw).
+  const depositTxns = depositAccts * (months * (spec.avgTransactionsPerAccountPerMonth + 0.5) + 7) * activeFrac;
+  const loanTxns = loanAccts * months * 1.5;
   return Math.round(depositTxns + loanTxns);
 }

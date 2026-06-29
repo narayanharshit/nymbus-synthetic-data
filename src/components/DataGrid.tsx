@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Columns3, Search } from "lucide-react";
+import { ChevronDown, Columns3, Search, X } from "lucide-react";
 import { cn } from "./ui";
 
 export interface GridColumn<T> {
@@ -29,6 +29,8 @@ export function DataGrid<T>({
   tagsOf,
   category,
   amountFilter,
+  scenarioFilter,
+  onClearScenario,
   toolbarRight,
   footerExtra,
 }: {
@@ -40,6 +42,9 @@ export function DataGrid<T>({
   category?: { label: string; options: string[]; of: (r: T) => string };
   /** Enables a $min/$max range filter on |of(row)| (e.g. amount or balance). */
   amountFilter?: { of: (r: T) => number };
+  /** A named, externally-applied row filter (e.g. a Test scenario). */
+  scenarioFilter?: { label: string; test: (r: T) => boolean } | null;
+  onClearScenario?: () => void;
   toolbarRight?: React.ReactNode;
   footerExtra?: React.ReactNode;
 }) {
@@ -59,6 +64,7 @@ export function DataGrid<T>({
 
   const visibleRows = React.useMemo(() => {
     let r = rows;
+    if (scenarioFilter) r = r.filter(scenarioFilter.test);
     const needle = query.trim().toLowerCase();
     if (needle) r = r.filter((x) => searchText(x).toLowerCase().includes(needle));
     if (flaggedOnly && tagsOf) r = r.filter((x) => tagsOf(x).length > 0);
@@ -87,7 +93,7 @@ export function DataGrid<T>({
       }
     }
     return r;
-  }, [rows, query, flaggedOnly, cat, amtMin, amtMax, sortKey, sortDir, columns, searchText, tagsOf, category, amountFilter]);
+  }, [rows, query, flaggedOnly, cat, amtMin, amtMax, sortKey, sortDir, columns, searchText, tagsOf, category, amountFilter, scenarioFilter]);
 
   const toggleSort = (key: string) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -100,6 +106,14 @@ export function DataGrid<T>({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
+        {scenarioFilter && (
+          <span className="flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent-weak px-2 py-1 text-[12px] font-medium text-accent">
+            Scenario: {scenarioFilter.label}
+            <button onClick={onClearScenario} aria-label="Clear scenario filter" className="hover:text-accent-hover">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        )}
         <div className="flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 focus-within:border-accent">
           <Search className="h-3.5 w-3.5 text-ink-faint" />
           <input

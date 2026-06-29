@@ -274,15 +274,37 @@ export function validationReport(ds: Dataset, validation: ValidationResult): str
   return out.join("\n");
 }
 
-/** All export files for a dataset: tables, canonical JSON, data dictionary, and
- *  a validation report. Validation is recomputed if not supplied. */
+/** Plain-text manifest so a colleague who receives the bundle knows what's inside. */
+export function readmeText(ds: Dataset): string {
+  const m = ds.meta;
+  return [
+    "Synthetic Banking Data Studio — export bundle",
+    `Run ${m.runId} · generated ${m.generatedAt.slice(0, 10)} · seed ${m.seed}`,
+    "",
+    "Files:",
+    "  parties.csv / accounts.csv / transactions.csv  — the dataset as tables (money in decimal dollars)",
+    "  dataset.json         — canonical export (money in integer cents; balances reconcile exactly)",
+    "  DATA_DICTIONARY.md   — every column, its meaning, and enum values",
+    "  VALIDATION_REPORT.md — each integrity & edge-case check, counts, and sampled proof rows",
+    "",
+    "Reproducibility: the same request + seed regenerate this exact dataset.",
+    "",
+    "All names, IDs, Social Security numbers, and EINs are SYNTHETIC and deliberately",
+    "invalid (SSN area 666, EIN prefix 00) — never real PII.",
+    "",
+  ].join("\n");
+}
+
+/** All export files for a dataset: a readme, tables, canonical JSON, data
+ *  dictionary, and a validation report. Validation is recomputed if not supplied. */
 export function allExportFiles(ds: Dataset, validation: ValidationResult = validateDataset(ds)): ExportFile[] {
   return [
+    { name: "README.txt", mime: "text/plain", content: readmeText(ds) },
     { name: "parties.csv", mime: "text/csv", content: partiesCsv(ds) },
     { name: "accounts.csv", mime: "text/csv", content: accountsCsv(ds) },
     { name: "transactions.csv", mime: "text/csv", content: transactionsCsv(ds) },
     { name: "dataset.json", mime: "application/json", content: datasetJson(ds) },
     { name: "DATA_DICTIONARY.md", mime: "text/markdown", content: dataDictionary(ds) },
-    { name: "validation_report.md", mime: "text/markdown", content: validationReport(ds, validation) },
+    { name: "VALIDATION_REPORT.md", mime: "text/markdown", content: validationReport(ds, validation) },
   ];
 }

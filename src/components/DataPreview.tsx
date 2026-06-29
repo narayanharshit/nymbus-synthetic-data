@@ -1,9 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, Download, Pencil } from "lucide-react";
+import { Check, ChevronDown, Download, FlaskConical, Pencil } from "lucide-react";
 import type { Account, Dataset, Party, Transaction } from "@/lib/domain/types";
-import type { ValidationResult, CheckStatus } from "@/lib/validate/validate";
+import {
+  edgeScenarios,
+  EDGE_ACCT_MATCH,
+  EDGE_TXN_MATCH,
+  type EdgeScenario,
+  type ValidationResult,
+  type CheckStatus,
+} from "@/lib/validate/validate";
 import type { DatasetSummary } from "@/lib/summary";
 import type { GenerationSpec } from "@/lib/domain/spec";
 import { formatUSD } from "@/lib/domain/money";
@@ -57,17 +64,38 @@ export function DataPreview({
   onEditRequest: () => void;
 }) {
   const [tab, setTab] = React.useState<Tab>("accounts");
+  const [scenario, setScenario] = React.useState<EdgeScenario | null>(null);
+
+  const scenarios = React.useMemo(() => edgeScenarios(dataset), [dataset]);
+  const threshold = dataset.meta.spec.largeWireThresholdMinor;
+  const txnFilter =
+    scenario && scenario.domain === "transactions" && EDGE_TXN_MATCH[scenario.key]
+      ? { label: scenario.label, test: (t: Transaction) => EDGE_TXN_MATCH[scenario.key]!(t, threshold) }
+      : null;
+  const acctFilter =
+    scenario && scenario.domain === "accounts" && EDGE_ACCT_MATCH[scenario.key]
+      ? { label: scenario.label, test: (a: Account) => EDGE_ACCT_MATCH[scenario.key]!(a) }
+      : null;
+  const pickScenario = (s: EdgeScenario) => {
+    setTab(s.domain);
+    setScenario(s);
+  };
+  const clearScenario = () => setScenario(null);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
       <SpecSummaryStrip spec={spec} onEditRequest={onEditRequest} />
       <MetricStrip dataset={dataset} validation={validation} summary={summary} />
+      <TestScenarios scenarios={scenarios} activeKey={scenario?.key ?? null} onPick={pickScenario} />
 
       <div className="flex items-center gap-4 border-b border-line px-3">
         {(["accounts", "transactions", "parties"] as Tab[]).map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => {
+              setTab(t);
+              setScenario(null);
+            }}
             className={cn(
               "-mb-px border-b-2 py-2 text-[12px] capitalize",
               tab === t
@@ -88,9 +116,58 @@ export function DataPreview({
         ))}
       </div>
 
-      {tab === "accounts" && <AccountsGrid dataset={dataset} validation={validation} />}
-      {tab === "transactions" && <TransactionsGrid dataset={dataset} validation={validation} />}
+      {tab === "accounts" && (
+        <AccountsGrid dataset={dataset} validation={validation} scenarioFilter={acctFilter} onClearScenario={clearScenario} />
+      )}
+      {tab === "transactions" && (
+        <TransactionsGrid dataset={dataset} validation={validation} scenarioFilter={txnFilter} onClearScenario={clearScenario} />
+      )}
       {tab === "parties" && <PartiesGrid dataset={dataset} validation={validation} />}
+    </div>
+  );
+}
+
+/** Turns the validator's edge-case counts into a clickable test plan: each item
+ *  filters the relevant table to exactly the records that exercise it. */
+function TestScenarios({
+  scenarios,
+  activeKey,
+  onPick,
+}: {
+  scenarios: EdgeScenario[];
+  activeKey: string | null;
+  onPick: (s: EdgeScenario) => void;
+}) {
+  if (!scenarios.length) return null;
+  return (
+    <div className="border-b border-line bg-paper px-3 py-2">
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <FlaskConical className="h-3.5 w-3.5 text-ink-muted" />
+        <span className="micro">Test scenarios — click to filter to the exact records</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {scenarios.map((s) => {
+          const active = activeKey === s.key;
+          return (
+            <button
+              key={s.key}
+              onClick={() => onPick(s)}
+              aria-pressed={active}
+              title={s.whatToTest}
+              className={cn(
+                "flex max-w-[15rem] flex-col items-start rounded-md border px-2.5 py-1.5 text-left transition-colors",
+                active ? "border-accent/50 bg-accent-weak" : "border-line bg-surface hover:bg-sunken",
+              )}
+            >
+              <span className="flex items-center gap-1.5 text-[12.5px] font-medium text-ink">
+                {s.label}
+                <span className="font-mono tnum text-[11px] text-ink-muted">{s.count.toLocaleString()}</span>
+              </span>
+              <span className="text-[11px] leading-snug text-ink-faint">{s.whatToTest}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -285,7 +362,17 @@ function Flags({ tags }: { tags: string[] }) {
   );
 }
 
-function AccountsGrid({ dataset, validation }: { dataset: Dataset; validation: ValidationResult }) {
+function AccountsGrid({
+  dataset,
+  validation,
+  scenarioFilter,
+  onClearScenario,
+}: {
+  dataset: Dataset;
+  validation: ValidationResult;
+  scenarioFilter?: { label: string; test: (a: Account) => boolean } | null;
+  onClearScenario?: () => void;
+}) {
   const products = [...new Set(dataset.accounts.map((a) => a.product))];
   const columns: GridColumn<Account>[] = [
     { key: "id", header: "ID", sortValue: (a) => a.id, render: (a) => <span className={mono}>{a.id}</span> },
@@ -323,6 +410,8 @@ function AccountsGrid({ dataset, validation }: { dataset: Dataset; validation: V
       tagsOf={(a) => a.tags}
       category={{ label: "Product", options: products, of: (a) => a.product }}
       amountFilter={{ of: (a) => a.currentBalanceMinor }}
+      scenarioFilter={scenarioFilter}
+      onClearScenario={onClearScenario}
       toolbarRight={<ExportMenu dataset={dataset} validation={validation} />}
       footerExtra={<span className="font-mono tnum">{tallies}</span>}
     />
@@ -340,7 +429,17 @@ function edgeTallies(rows: { neg: boolean; status: string }[]): string {
   return parts.join(" · ");
 }
 
-function TransactionsGrid({ dataset, validation }: { dataset: Dataset; validation: ValidationResult }) {
+function TransactionsGrid({
+  dataset,
+  validation,
+  scenarioFilter,
+  onClearScenario,
+}: {
+  dataset: Dataset;
+  validation: ValidationResult;
+  scenarioFilter?: { label: string; test: (t: Transaction) => boolean } | null;
+  onClearScenario?: () => void;
+}) {
   const columns: GridColumn<Transaction>[] = [
     { key: "id", header: "ID", sortValue: (t) => t.id, render: (t) => <span className={mono}>{t.id}</span> },
     { key: "account", header: "Account", sortValue: (t) => t.accountId, render: (t) => <span className={mono}>{t.accountId}</span> },
@@ -380,6 +479,8 @@ function TransactionsGrid({ dataset, validation }: { dataset: Dataset; validatio
         of: (t) => t.category,
       }}
       amountFilter={{ of: (t) => t.amountMinor }}
+      scenarioFilter={scenarioFilter}
+      onClearScenario={onClearScenario}
       toolbarRight={<ExportMenu dataset={dataset} validation={validation} />}
     />
   );

@@ -145,9 +145,10 @@ export function RequestCard({
   return (
     <div className="rounded-lg border border-line bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[14px] font-medium text-ink">Test data request</h2>
-          {source && (
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <h2 className="text-[14px] font-medium text-ink">Test data request — review &amp; edit</h2>
+            {source && (
             <span
               className={cn(
                 "inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium",
@@ -156,7 +157,11 @@ export function RequestCard({
             >
               {source === "llm" ? `read by ${model ?? "AI"}` : "keyword parser"}
             </span>
-          )}
+            )}
+          </div>
+          <p className="text-[12px] text-ink-muted">
+            We filled this in from your description. Adjust anything, then generate.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={copy} className={headerBtn}>
@@ -328,19 +333,24 @@ export function RequestCard({
           </dd>
         </dl>
 
-        {notes.length > 0 && (
-          <div className="mt-4">
-            <div className="micro mb-2">Assumptions</div>
-            <ul className="space-y-1.5">
-              {notes.map((n, i) => (
-                <li key={i} className="flex gap-2 text-[12.5px] text-ink-muted">
-                  <span className="select-none text-accent">·</span>
-                  <span>{n}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {(() => {
+          // The volume-cap note is shown inline next to Volume; don't repeat it here.
+          const listNotes = notes.filter((n) => n !== capNote);
+          if (!listNotes.length) return null;
+          return (
+            <div className="mt-4">
+              <div className="micro mb-2">Assumptions</div>
+              <ul className="space-y-1.5">
+                {listNotes.map((n, i) => (
+                  <li key={i} className="flex gap-2 text-[12.5px] text-ink-muted">
+                    <span className="select-none text-accent">·</span>
+                    <span>{n}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
