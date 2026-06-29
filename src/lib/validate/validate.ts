@@ -32,15 +32,15 @@ export const EDGE_ACCT_MATCH: Partial<Record<keyof EdgeCases, (a: Account) => bo
   jointOwnership: (a) => a.owners.length > 1,
 };
 
-const WHAT_TO_TEST: Record<keyof EdgeCases, string> = {
-  largeWires: "AML / large-wire alerting and reporting (both directions).",
-  nsfOverdraft: "Overdraft and NSF fee handling.",
-  backdatedPostings: "Backdated / holiday posting logic.",
-  dormantAccounts: "Dormancy detection and reactivation.",
-  closedWithResidual: "Residual activity on closed accounts.",
-  atLimitAccounts: "At-limit / over-limit handling.",
-  newAccountFunding: "New-account funding and onboarding flows.",
-  jointOwnership: "Joint ownership / multi-owner handling.",
+export const WHAT_TO_TEST: Record<keyof EdgeCases, string> = {
+  nsfOverdraft: "Tests overdraft posting, NSF fees, and negative-balance handling.",
+  largeWires: "Tests AML / large-wire monitoring and alerting, inbound and outbound.",
+  newAccountFunding: "Tests first-deposit funding and new-account first-transaction flows.",
+  dormantAccounts: "Tests dormancy detection, reactivation, and escheatment timing.",
+  jointOwnership: "Tests multi-owner accounts and shared-access handling.",
+  closedWithResidual: "Tests closed accounts with trailing / residual activity.",
+  atLimitAccounts: "Tests accounts at balance or credit limits and threshold behavior.",
+  backdatedPostings: "Tests effective-date vs posting-date handling and backdated entries.",
 };
 
 export interface EdgeScenario {

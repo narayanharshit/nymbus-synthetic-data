@@ -25,6 +25,12 @@ type Stage = "describe" | "review" | "dataset";
 const STORAGE_KEY = "nymbus-draft-v1";
 const INITIAL_SPEC = normalizeSpec({}).spec;
 
+// One-click sample so a reviewer can see the whole flow without inventing prose.
+const SAMPLE_DESCRIPTION =
+  "Community bank, about 750 customers. Mostly consumer checking and savings, plus money market, " +
+  "a handful of auto loans, and a few small-business operating accounts. Last 3 months of activity. " +
+  "Include overdrafts, some dormant accounts, and a few large wires over $25k for AML testing.";
+
 /**
  * Restore an in-progress draft saved on a previous visit. Kept as a module-level
  * helper (rather than inline in the effect) because localStorage is unavailable
@@ -139,18 +145,22 @@ export function Studio() {
     if (location.hash !== target) location.hash = s;
   }
 
-  async function interpret() {
-    if (!text.trim() && Object.keys(baseSpec).length === 0) {
+  async function interpret(overrideText?: string) {
+    // Guard against an event object arriving when used directly as an onClick handler.
+    const override = typeof overrideText === "string" ? overrideText : undefined;
+    const t = override ?? text;
+    if (!t.trim() && Object.keys(baseSpec).length === 0) {
       setInterpretError("Describe a client, or pick a preset, to interpret.");
       return;
     }
+    if (override !== undefined) setText(override); // reflect a sample in the textarea
     setInterpreting(true);
     setInterpretError(null);
     try {
       const res = await fetch("/api/interpret", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text, baseSpec }),
+        body: JSON.stringify({ text: t, baseSpec }),
       });
       if (!res.ok) throw new Error(`Interpreter returned ${res.status}`);
       const data: InterpretResponse = await res.json();
@@ -259,6 +269,7 @@ export function Studio() {
             text={text}
             setText={setText}
             onInterpret={interpret}
+            onTrySample={() => interpret(SAMPLE_DESCRIPTION)}
             interpreting={interpreting}
             error={interpretError}
             onPreset={applyPreset}

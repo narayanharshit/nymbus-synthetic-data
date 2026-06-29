@@ -52,7 +52,11 @@ export function AdvancedPanel({
       </label>
 
       <div>
-        <div className="micro mb-1.5">Transaction mix (relative weights)</div>
+        <div className="micro mb-1">Transaction mix (relative weights)</div>
+        <p className="mb-2 text-[11.5px] leading-snug text-ink-faint">
+          Mirror the client&apos;s real channel mix (ACH, card, wire, etc.) so volume and load tests are
+          representative.
+        </p>
         <div className="grid grid-cols-3 gap-2">
           {MIX_KEYS.map(({ key, label }) => (
             <label key={key} className="flex flex-col gap-1">

@@ -11,6 +11,7 @@ import type {
   Provenance,
   ProvenanceField,
 } from "@/lib/interpret/merge";
+import { WHAT_TO_TEST } from "@/lib/validate/validate";
 import { cn } from "./ui";
 
 const PRODUCT_LABELS: Record<ProductType, string> = {
@@ -196,7 +197,11 @@ export function RequestCard({
         )}
 
         <dl className="grid grid-cols-[150px_1fr] text-[13px]">
-          <Row label="Institution" prov={provenance.institutionType}>
+          <Row
+            label="Institution"
+            prov={provenance.institutionType}
+            hint="Credit unions skew to members, joint accounts, and consumer lending; banks carry more business accounts."
+          >
             <select
               value={spec.institutionType}
               aria-label="Institution type"
@@ -281,7 +286,11 @@ export function RequestCard({
             </div>
           </Row>
 
-          <Row label="Large-wire threshold" prov={provenance.largeWireThresholdMinor}>
+          <Row
+            label="Large-wire threshold"
+            prov={provenance.largeWireThresholdMinor}
+            hint={`Match the client's wire-monitoring rules so large-wire / AML alerts fire during testing. (Reference: the funds-transfer "Travel Rule" applies to wires of $3,000+.)`}
+          >
             <InlineNumber
               value={Math.round(spec.largeWireThresholdMinor / 100)}
               min={0}
@@ -303,6 +312,7 @@ export function RequestCard({
                     onClick={() => toggleEdge(key)}
                     role="switch"
                     aria-checked={active}
+                    title={WHAT_TO_TEST[key]}
                     className={cn(
                       "rounded border px-1.5 py-0.5 text-[11.5px]",
                       active
@@ -356,14 +366,27 @@ export function RequestCard({
   );
 }
 
-/** One request row: label, the editable value, and a stated/assumed tag. */
-function Row({ label, prov, children }: { label: string; prov?: FieldProvenance; children: React.ReactNode }) {
+/** One request row: label, the editable value, a stated/assumed tag, optional hint. */
+function Row({
+  label,
+  prov,
+  hint,
+  children,
+}: {
+  label: string;
+  prov?: FieldProvenance;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <>
       <dt className="flex items-center border-t border-line py-2 text-ink-faint">{label}</dt>
-      <dd className="flex flex-wrap items-center gap-2 border-t border-line py-2 text-ink">
-        {children}
-        <ProvTag prov={prov} />
+      <dd className="border-t border-line py-2 text-ink">
+        <div className="flex flex-wrap items-center gap-2">
+          {children}
+          <ProvTag prov={prov} />
+        </div>
+        {hint && <p className="mt-1 text-[11.5px] leading-snug text-ink-faint">{hint}</p>}
       </dd>
     </>
   );

@@ -17,6 +17,7 @@ export function StageDescribe({
   text,
   setText,
   onInterpret,
+  onTrySample,
   interpreting,
   error,
   onPreset,
@@ -24,6 +25,7 @@ export function StageDescribe({
   text: string;
   setText: (t: string) => void;
   onInterpret: () => void;
+  onTrySample: () => void;
   interpreting: boolean;
   error: string | null;
   onPreset: (id: string) => void;
@@ -36,6 +38,10 @@ export function StageDescribe({
       <p className="mt-1.5 text-[14px] leading-relaxed text-ink-muted">
         Describe a client&apos;s banking configuration in plain language — get a realistic, validated
         test dataset. No engineer, no ticket.
+      </p>
+      <p className="mt-2 text-[12.5px] leading-relaxed text-ink-faint">
+        Before: explain the configuration to an engineer and wait for a dataset. Now: describe it in
+        plain language, review the request, and export realistic test data in minutes.
       </p>
 
       <div className="mt-5">
@@ -58,14 +64,19 @@ export function StageDescribe({
         </div>
       )}
 
-      <div className="mt-4 flex items-center justify-between">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <span className="text-[12px] text-ink-faint">
           {empty ? "Describe a client, or pick a preset below." : `${text.trim().split(/\s+/).length} words`}
         </span>
-        <Button onClick={onInterpret} disabled={interpreting || empty} title={empty ? "Describe a client first" : undefined}>
-          {interpreting ? <Spinner className="h-4 w-4" /> : <Wand2 className="h-4 w-4" />}
-          Interpret
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => onTrySample()} disabled={interpreting}>
+            Try a sample →
+          </Button>
+          <Button onClick={() => onInterpret()} disabled={interpreting || empty} title={empty ? "Describe a client first" : undefined}>
+            {interpreting ? <Spinner className="h-4 w-4" /> : <Wand2 className="h-4 w-4" />}
+            Interpret
+          </Button>
+        </div>
       </div>
 
       <div className="mt-9">
